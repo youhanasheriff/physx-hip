@@ -34,7 +34,10 @@ calling milestone 1 complete: an ordering race that crashes two GPU snippets (se
 
 - Upstream: `github.com/NVIDIA-Omniverse/PhysX`, remote name `upstream`, push URL disabled.
 - **Pinned base: tag `ovphysx-0.8.0`, commit `7d6f6ac8b`, PhysX SDK 5.13.0.** **[ran]**
-- Working branch: `hip-port`. Everything is local; nothing has been pushed anywhere.
+- Working branch: `hip-port`.
+- Fork: `github.com/youhanasheriff/physx-hip` (remote `origin`), private, created
+  2026-11-19 as a standalone repository, not a GitHub fork of NVIDIA's. Nothing is pushed
+  to, or opened against, NVIDIA's repository.
 
 Why this tag and not `110.3-omni-and-physx-5.9.1` **[ran: git tree comparison]**:
 
@@ -311,11 +314,9 @@ Next step: trace HIP API calls (`AMD_LOG_LEVEL=3`) for one failing frame of
 ## 9. Decisions needed from Youhana
 
 1. **Test GPU**: rent or buy, and when (section 3).
-2. **Fork location and visibility**: personal account or the `sheriax` org, public or private.
+2. **Fork visibility**: the fork is on the personal account and private. Whether and when
+   to make it public is open; settle the licence question first.
 3. **Licence for the port's own files** under `hip/` (Apache-2.0 suggested).
-4. **sudo for future sessions**: the 1Password item linked in the kickoff thread is in a
-   vault the service-account token cannot read. Move or copy it to a readable vault, or
-   keep answering prompts.
 
 ## 10. Changes to upstream files
 
