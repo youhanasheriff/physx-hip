@@ -81,6 +81,16 @@ SET(GCC_WARNINGS "-Wall -Werror \
 	-Wno-use-after-free \
 ")
 
+# Modified for the HIP port (not part of upstream PhysX): upstream builds with -Werror and
+# is only tested with Clang 14/18 and GCC 11/13. Newer compilers raise warnings that are
+# not PhysX defects, so the warnings-as-errors policy can be switched off here instead of
+# editing the flag lists above. The default keeps upstream behaviour.
+OPTION(PX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
+IF(NOT PX_WARNINGS_AS_ERRORS)
+	STRING(REPLACE " -Werror " " -Wno-error " CLANG_WARNINGS "${CLANG_WARNINGS}")
+	STRING(REPLACE " -Werror " " -Wno-error " GCC_WARNINGS "${GCC_WARNINGS}")
+ENDIF()
+
 IF(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
 	# gw: these optimizations are disabled for now. fp-contract causes floating point inaccuracy and deviation in behavior,
 	# tree-vrp and delete-null-pointer-checks cause known bugs on some versions of gcc

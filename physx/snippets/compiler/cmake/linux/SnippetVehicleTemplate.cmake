@@ -8,10 +8,20 @@
 SET(SNIPPET_PLATFORM_INCLUDES
 )
 
+# Modified for the HIP port (not part of upstream PhysX): PX_SNIPPETS_HEADLESS builds the
+# snippets without RENDER_SNIPPET so they run a fixed number of steps and exit, which lets
+# them be used as tests on a machine with no display. The default keeps upstream behaviour.
+OPTION(PX_SNIPPETS_HEADLESS "Build snippets without the interactive render loop" OFF)
+IF(PX_SNIPPETS_HEADLESS)
+	SET(PX_SNIPPET_RENDER_DEF "")
+ELSE()
+	SET(PX_SNIPPET_RENDER_DEF "RENDER_SNIPPET")
+ENDIF()
+
 SET(SNIPPET_COMPILE_DEFS
 	# Common to all configurations
 
-	${PHYSX_LINUX_COMPILE_DEFS};RENDER_SNIPPET;
+	${PHYSX_LINUX_COMPILE_DEFS};${PX_SNIPPET_RENDER_DEF}
 
 	$<$<CONFIG:debug>:${PHYSX_LINUX_DEBUG_COMPILE_DEFS};>
 	$<$<CONFIG:checked>:${PHYSX_LINUX_CHECKED_COMPILE_DEFS};>
