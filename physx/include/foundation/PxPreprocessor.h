@@ -57,7 +57,8 @@ Compiler defines, see http://sourceforge.net/p/predef/wiki/Compilers/
 #endif
 
 // not treated as its own compiler because clang, for example, can, in theory, compile CUDA code too
-#if defined(__CUDACC__)
+// Modified for the HIP port: HIP's compiler (__HIPCC__) is treated like the CUDA compiler.
+#if defined(__CUDACC__) || defined(__HIPCC__)
 	#define PX_CUDA_COMPILER 1
 #else
 	#define PX_CUDA_COMPILER 0

@@ -36,7 +36,10 @@ struct PxsParticleMaterialData
 
 #if PX_SUPPORT_GPU_PHYSX
 
+// Modified for the HIP port: HIP defines float4 as a type alias, which cannot be forward declared.
+#if !defined(__HIPCC__)
 struct float4;
+#endif
 
 PX_CUDA_CALLABLE inline physx::PxU32 PxGetGroup(physx::PxU32 phase) { return phase & physx::PxParticlePhaseFlag::eParticlePhaseGroupMask; }
 PX_CUDA_CALLABLE inline bool PxGetFluid(physx::PxU32 phase) { return (phase & physx::PxParticlePhaseFlag::eParticlePhaseFluid) != 0; }

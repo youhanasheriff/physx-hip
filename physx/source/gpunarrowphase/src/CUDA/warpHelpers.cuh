@@ -186,6 +186,13 @@ __device__ inline void scanWarp<PxU32, AddOP<PxU32> >(unsigned int scanIdx, vola
 	#pragma unroll
 	for (int STEP = 0; STEP < STEPS; STEP++)
 	{
+#if defined(__HIPCC__)
+		// Modified for the HIP port: same step as the PTX below, which adds the value shuffled up
+		// from STEP lanes below only in lanes that have such a source lane.
+		const PxU32 shifted = __shfl_up_sync(FULL_MASK, input, 1u << STEP);
+		if ((threadIdx.x & (WARP_SIZE - 1)) >= (1u << STEP))
+			input += shifted;
+#else
 		asm(
 			"{"
 			"  .reg .u32 r0;"
@@ -195,6 +202,7 @@ __device__ inline void scanWarp<PxU32, AddOP<PxU32> >(unsigned int scanIdx, vola
 			"  mov.u32 %0, r0;"
 			"}"
 			: "=r"(input) : "r"(input), "r"(1 << STEP), "r"(SHFL_MASK), "r"(input));
+#endif
 	}
 	sdata[scanIdx] = input;
 }
@@ -208,6 +216,13 @@ __device__ inline void scanWarp<int, AddOP<int> >(unsigned int scanIdx, volatile
 	#pragma unroll
 	for (int STEP = 0; STEP < STEPS; STEP++)
 	{
+#if defined(__HIPCC__)
+		// Modified for the HIP port: same step as the PTX below, which adds the value shuffled up
+		// from STEP lanes below only in lanes that have such a source lane.
+		const PxU32 shifted = __shfl_up_sync(FULL_MASK, input, 1u << STEP);
+		if ((threadIdx.x & (WARP_SIZE - 1)) >= (1u << STEP))
+			input += shifted;
+#else
 		asm(
 			"{"
 			"  .reg .u32 r0;"
@@ -217,6 +232,7 @@ __device__ inline void scanWarp<int, AddOP<int> >(unsigned int scanIdx, volatile
 			"  mov.u32 %0, r0;"
 			"}"
 			: "=r"(input) : "r"(input), "r"(1 << STEP), "r"(SHFL_MASK), "r"(input));
+#endif
 	}
 	sdata[scanIdx] = input;
 }

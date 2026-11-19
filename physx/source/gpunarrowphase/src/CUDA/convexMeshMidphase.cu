@@ -3,6 +3,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2008-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// Modified for the HIP port: PTX named barriers (bar.sync N) do not exist on AMD GPUs. Every thread
+// of the block reaches each of these barriers, so a plain block barrier is equivalent there.
+#if defined(__HIPCC__)
+#define PX_NAMED_BLOCK_BARRIER(n) __syncthreads()
+#else
+#define PX_NAMED_BLOCK_BARRIER(n) asm volatile ("bar.sync " #n ";")
+#endif
+
 #include <stdio.h>
 #include <stdint.h>
 #include <cuda.h>
@@ -770,7 +778,7 @@ PX_FORCE_INLINE __device__ void tryToAssignContactToExistingPatch(Patch* patches
 	}
 
 	// syncthreads() but with explicit barrier number to make sure we really have the whole block waiting here.
-	asm volatile ("bar.sync 1;");
+	PX_NAMED_BLOCK_BARRIER(1);
 
 	//if (accept2)
 	//{
@@ -825,7 +833,7 @@ PX_FORCE_INLINE __device__ void tryToAssignContactToExistingPatch(Patch* patches
 
 	// AD: we need a barrier to make sure that all threads have executed the if above.
 	// Otherwise we might change the flag and not all the threads will do the same thing.
-	asm volatile ("bar.sync 2;");
+	PX_NAMED_BLOCK_BARRIER(2);
 
 	if (threadIdx.x == 0)
 		anyKeepS = false;
@@ -868,7 +876,7 @@ PX_FORCE_INLINE __device__ void createNewPatches(Patch* patchesS, Contact& conta
 		}
 
 		// syncthreads() but with explicit barrier number to make sure we really have the whole block waiting here.
-		asm volatile ("bar.sync 3;");
+		PX_NAMED_BLOCK_BARRIER(3);
 
 		//Now, find the smallest separation across all threads...
 		minSep = shMinSepS[threadIndexInWarp];
@@ -889,7 +897,7 @@ PX_FORCE_INLINE __device__ void createNewPatches(Patch* patchesS, Contact& conta
 			}
 
 			// __syncthreads(); but with explicit barrier number to make sure we really have the whole block entering the if and waiting here.
-			asm volatile ("bar.sync 4;");
+			PX_NAMED_BLOCK_BARRIER(4);
 
 			//Now place any candidate contacts into the reduction buffer...
 
@@ -942,7 +950,7 @@ PX_FORCE_INLINE __device__ void createNewPatches(Patch* patchesS, Contact& conta
 		// if you wonder why this is necessary even though we already have a blocking wait inside the if,
 		// you need to remember that the if condition could be false, and if we don't block here
 		// a warp could run ahead and make it true before everyone is past the branch.
-		asm volatile ("bar.sync 5;");
+		PX_NAMED_BLOCK_BARRIER(5);
 	}
 }
 

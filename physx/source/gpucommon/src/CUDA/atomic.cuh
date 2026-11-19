@@ -125,7 +125,10 @@ PX_FORCE_INLINE static __device__ void AtomicOr(PxU64* address, const PxU64 mask
  * adds 20% performance in FLIP P2G compared to atomicAdd() or plain red.add.f32 */
 PX_FORCE_INLINE __device__ void PxRedAddGlobal(float* addr, const float val)
 {
-#if __CUDA_ARCH__ >= 350
+#if defined(__HIPCC__)
+	// Modified for the HIP port: the PTX reduction below has no AMD equivalent; a plain atomic add gives the same result.
+	atomicAdd(addr, val);
+#elif __CUDA_ARCH__ >= 350
 	asm volatile ("red.global.add.f32 [%0], %1;" :: __STG_PTR(addr) , "f"(val));
 #else
 #if __CUDA_ARCH__ >= 200
