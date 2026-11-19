@@ -4,26 +4,31 @@ Port of the GPU side of NVIDIA PhysX from CUDA to AMD HIP (ROCm), so that PhysX'
 pipeline, then ovphysx, then the omni.physx Kit extension can run on AMD GPUs.
 
 This file is the running record: status, decisions, and what has been verified versus
-assumed. Every claim is tagged **[ran]** (executed on this machine and observed),
-**[read]** (established by reading source or headers) or **[assumed]** (not yet checked).
+assumed. Claims are tagged **[ran]** (executed on this machine and observed), **[read]**
+(established by reading source or headers), **[research]** (from the delegated web research
+of 2026-11-19, with its sources; not re-checked here) or **[assumed]** (not yet checked).
 
-Last updated: 2026-11-19.
+Last updated: 2026-11-19, end of the kickoff thread.
 
 ## 1. Status
 
 | Item | State |
 |---|---|
 | Upstream cloned, base pinned, working branch `hip-port` | done **[ran]** |
-| Stock CPU build (clang 21) | done **[ran]** |
-| Stock CPU snippets as tests | 55 pass, 0 fail, 4 skipped **[ran]** |
-| ROCm 7.1 installed, HIP runs on this PC's integrated GPU | done **[ran]** |
+| Stock CPU build (clang 21) and snippets | 55 pass, 0 fail, 4 skipped **[ran]** |
+| ROCm 7.1 installed; HIP runs on this PC's integrated GPU (gfx1036) | done **[ran]** |
 | HIP capability probe (PhysX-style kernels and driver calls) | 135 checks, 0 failed **[ran]** |
 | All 61 SDK kernel sources compile and link for AMD GPUs | done **[ran]** |
-| All 61 kernel modules load on the GPU, all 488 kernel names resolve | done **[ran]** |
-| Host side (context manager, kernel embedding, CMake) built against HIP | not started |
-| Any PhysX kernel executed inside a PhysX simulation on AMD | not yet |
+| `libPhysXGpu_64.so` builds with the HIP backend through CMake | done **[ran]** |
+| Rigid bodies on the GPU pipeline match the CPU pipeline | 8 of 8 scenes pass, PGS and TGS **[ran]** |
+| All snippets against the HIP build | 67 pass, 2 fail, 4 skipped **[ran]** |
+| GPU snippets (14) | 12 run clean, 2 fail intermittently (section 8) **[ran]** |
+| Numerical validation of GPU-only features (particles, deformables, SDF) | not started |
+| ovphysx, Kit extension | not started |
 
-Nothing found so far makes the port impossible. See section 9 for what is still unproven.
+**Verdict so far: feasible.** Nothing found makes the port impossible. PhysX's GPU rigid-body
+pipeline runs on an AMD GPU today and agrees with the CPU pipeline. One open defect blocks
+calling milestone 1 complete: an ordering race that crashes two GPU snippets (section 8).
 
 ## 2. Base
 
@@ -43,23 +48,20 @@ Goals 1 (SDK) and 2 (ovphysx) can only be built from the newer tag, and ovphysx'
 the only large automated suite in the repo; the SDK ships snippets, not unit tests. Goal 3
 (Kit extension) needs the port carried to 5.9.1 or to NVIDIA's next combined release. The
 GPU directories differ between the two tags by about 12.9k added / 12.2k removed lines in
-118 files, so the port is kept as a compatibility layer with as few edits to NVIDIA's
-sources as possible (section 6).
+118 files, so the port is kept as a compatibility layer with few edits to NVIDIA's sources.
 
 ### Licence
 
 The brief said BSD-3. That is only the root `LICENSE.md`. **The PhysX SDK and ovphysx are
 Apache-2.0** at both tags: `physx/LICENSE.md`, and all 1,839 SPDX headers under
-`physx/source` and `physx/include` say Apache-2.0. **[ran]** Consequences for a fork:
+`physx/source` and `physx/include`. **[ran]** Consequences for a fork:
 
 - keep every existing copyright and SPDX line (done; no header has been touched);
-- Apache-2.0 section 4(b): modified files must carry a notice that they were changed. Each
-  edit to an upstream file is marked with a `Modified for the HIP port` comment, and
-  section 10 lists them;
-- new files under `hip/` state that they are not part of upstream PhysX. They have no
-  licence header yet: **decision needed** on the licence for the port's own files
-  (Apache-2.0 is the obvious choice).
-- ovphysx's prebuilt binaries are under the NVIDIA Omniverse License; only source is used here.
+- Apache-2.0 section 4(b): modified files must say they were changed. Every edit to an
+  upstream file carries a `Modified for the HIP port` comment; section 10 lists them;
+- new files under `hip/` say they are not part of upstream PhysX. They have no licence
+  header yet: **decision needed** (Apache-2.0 is the obvious choice);
+- ovphysx's prebuilt binaries are under the NVIDIA Omniverse License; only source is used.
 
 ## 3. Hardware and test strategy
 
@@ -69,236 +71,289 @@ Ryzen 9 9950X, integrated Radeon (Granite Ridge, PCI `1002:13c0`), Ubuntu 26.04.
 
 - Ubuntu 26.04 packages ROCm 7.1 in `universe`. Installed with apt: `hipcc`,
   `libamdhip64-dev`, `rocminfo`, `rocm-smi`, `hipify-clang`, `librocthrust-dev`,
-  `rocm-opencl-icd`, `clinfo`. HIP 7.1.52801, compiler is the distro's clang 21.1.8. **[ran]**
-- `rocminfo` sees the integrated GPU as **`gfx1036`, wavefront size 32, 2 compute units,
-  14.9 GiB addressable** (system RAM through GTT). No `HSA_OVERRIDE_GFX_VERSION` or any
-  other override was needed. **[ran]**
-- The capability probe (`hip/probe/run.sh`) passes on it: 135 checks, 0 failed. **[ran]**
+  `rocm-opencl-icd`, `clinfo`. HIP 7.1.52801; the compiler is the distro's clang 21.1.8. **[ran]**
+- The integrated GPU is **`gfx1036`, wavefront size 32, 2 compute units, 14.9 GiB
+  addressable** (system RAM). No `HSA_OVERRIDE_GFX_VERSION` or other override needed. **[ran]**
+- It is not in AMD's official support matrix, but AMD's own build system marks gfx1036 as
+  sanity tested and release ready, and AMD publishes device packages for it. **[research]**
 - Device access: the user was added to the `render` and `video` groups (effective at next
-  login). For the current session a temporary ACL was set on `/dev/kfd` and
+  login). For the current boot a temporary ACL was set on `/dev/kfd` and
   `/dev/dri/renderD128`; it disappears at reboot. **[ran]**
+- The newest ROCm is 10.2.0 (2026-11-18), which officially supports Ubuntu 26.04.1 and can
+  be installed without root from pip or tarballs. **[research]** Not tried; 7.1 is what runs here.
 
-So the "no CUDA reference, no supported GPU" problem is smaller than feared: **correctness
-work can be done on this PC today.** What it cannot give is performance numbers that mean
-anything (2 compute units), coverage of a different GPU generation, or confidence about
-memory behaviour on a card with real VRAM.
+**Correctness work can be done on this PC.** What it cannot give: performance numbers that
+mean anything (PBF takes 279 s here), coverage of a second GPU generation, behaviour on a
+card with real VRAM, and behaviour with more than 2 compute units, where races that hide
+here may show.
 
 ### Test strategy
 
-1. **CPU pipeline as the numerical reference.** PhysX runs the same scene on its CPU
-   pipeline and on its GPU pipeline. There is no NVIDIA GPU here, so the CPU pipeline is the
-   only reference. The two pipelines are not bit-identical even on NVIDIA hardware
-   (different solvers orderings and float contraction), so comparisons are tolerance-based
-   on body poses and velocities after N steps, plus invariants (no NaN, energy bounded,
-   contact counts within a band). **[assumed: tolerance levels to be set empirically in M1]**
-2. **Snippets as smoke tests.** `hip/scripts/run_snippets.sh` runs every snippet headless.
-   The 13 GPU snippets (HelloGRB, PBF, deformables, SDF, isosurface, direct-GPU API) are the
-   first GPU targets.
-3. **Kernel-level probes.** `hip/probe` checks the primitives PhysX leans on against exact
-   host references. It runs in seconds and is the first thing to run on any new GPU.
-4. **ovphysx's own test suite** (191 Python tests, 93 C unit tests) once M3 is reached.
-5. **HIP-CPU is not part of the plan.** PhysX loads kernels as modules and launches them by
-   name through the driver API, and uses warp shuffles and ballots heavily; a CPU
-   implementation of HIP would have to emulate all of that. With a working GPU on the desk
-   there is no need. *(Maintenance status of HIP-CPU: see research notes, section 11.)*
+1. **CPU pipeline as the numerical reference for rigid bodies and articulations.**
+   `hip/tests/cpu_gpu_compare` runs the same scene on both pipelines and compares poses.
+   The two are not bit-identical even on NVIDIA hardware, so each scene has a tolerance
+   that fits it. The sharpest check is the *converged* variant: at 64 solver iterations
+   both solvers reach the same resting state, so a 6 cm difference in a 12-level pyramid at
+   the default 4 iterations shrinks to 1.1 mm (PGS) and 0.1 mm (TGS). That shows the
+   default-iteration gap is solver convergence, not a defect. **[ran]**
+2. **GPU-only features have no CPU reference.** PBD particles, deformable surfaces and
+   volumes, and SDF collision exist only on the GPU. For these the plan is invariants
+   (finite state, volume and momentum conservation, analytic rest states) and comparison
+   between two different AMD GPUs. "Snippet ran without errors" is all that is established
+   for them today. **[assumed plan]**
+3. **Snippets as smoke tests**: `hip/scripts/run_snippets.sh`.
+4. **Runtime-semantics probes** (`hip/probe`): exact checks of the primitives PhysX leans
+   on, plus checks of HIP behaviours PhysX depends on implicitly. Seconds to run; the first
+   thing to run on any new GPU.
+5. **ovphysx's own tests** (191 Python, 93 C) at milestone 3.
+6. **HIP-CPU is out.** It was archived on 2026-07-07, has no `hipModuleLoadData`, and its
+   warp size is the CPU's SIMD width. **[research]** chipStar on a CPU lacks inline-assembly
+   handling and 3D textures. Neither is needed with a working GPU on the desk.
 
 ### Hardware recommendation
 
-*Pending the research task's price data; see section 11.* The shape of it:
+Not needed now, and not needed to finish milestone 1. Needed before anyone says "works on
+AMD": one officially supported RDNA card, for a second GPU generation, real VRAM limits,
+more compute units and usable performance. Prices **[research, Nov 2026, volatile]**:
 
-- Not needed to start, and not needed for milestone 1.
-- Needed before calling anything "works on AMD": one officially supported RDNA discrete
-  card, to cover a second GPU generation, real VRAM limits, and realistic performance.
-- **Must be an RDNA (Radeon RX) card, not an Instinct card.** See the wavefront constraint
-  in section 5. This also rules out most cloud AMD GPU rental, which is Instinct MI300-class.
+| Option | Cost | Notes |
+|---|---|---|
+| Rent Radeon AI PRO R9700 (gfx1201) at HOSTKEY | about EUR 0.47/hour | cheapest route to an officially supported RDNA4 GPU; whether sign-up is self-serve is unverified |
+| Buy RX 7600 8 GB (gfx1102) | about USD 300-390 | cheapest officially supported card; 8 GB limits scene size |
+| Buy RX 9060 XT 16 GB (gfx1200) | about USD 730 street, INR 60-80k in India | newest generation, 16 GB; prices rising |
+| Rent Instinct MI300X (DigitalOcean, Hot Aisle) | USD 2-3/hour | **no use here**: 64-lane wavefronts, see section 5 |
+
+Recommendation: when milestone 2 starts, rent the R9700 for a few hours first (a few euros)
+to validate on a second, officially supported GPU. Buy a card only if regular performance
+work is wanted; then the RX 9060 XT 16 GB is the better fit, the RX 7600 the cheaper one.
+Any of them fits the 9950X board; the integrated GPU can stay as a second test target.
 
 ## 4. How CUDA is used in PhysX (inventory)
 
-Sizes, SDK only **[ran: counted in the tree]**: 61 `.cu` and 59 `.cuh` files, 89,738 lines,
-491 `__global__` kernels, of which PhysX looks up 488 by name. Host-side GPU code: 198 files,
-79,062 lines. Outside the SDK there are 3 more `.cu` files in ovphysx.
+Sizes, SDK only **[ran]**: 61 `.cu` and 59 `.cuh` files, 89,738 lines, 491 `__global__`
+kernels, of which PhysX looks up 488 by name. Host-side GPU code: 198 files, 79,062 lines.
+Outside the SDK there are 3 more `.cu` files in ovphysx.
 
 ### Kernel compilation and loading **[read]**
 
-- CMake enables the `CUDA` language and compiles each `.cu` with nvcc into an ordinary
-  object file, for SASS on sm_70 through sm_120 plus PTX for forward compatibility
-  (`source/compiler/cmakegpu/CMakeLists.txt`).
-- PhysX does **not** link the CUDA runtime. It defines `__cudaRegisterFatBinary` and
-  `__cudaRegisterFunction` itself (`cudamanager/src/CudaKernelWrangler.cpp`). nvcc's
-  generated static initialisers call them, which hands PhysX a pointer to each embedded fat
-  binary and the name of each kernel (`physxgpu/src/PxgPhysXGpu.cpp`).
-- At context creation, `CudaCtxMgr` calls `cuModuleLoadDataEx` on each fat binary.
-  `KernelWrangler` then calls `cuModuleGetFunction` for each name in `PxgKernelNames.h`.
+- CMake enables the `CUDA` language and compiles each `.cu` with nvcc for sm_70..sm_120.
+- PhysX does not link the CUDA runtime. It defines `__cudaRegisterFatBinary` and
+  `__cudaRegisterFunction` itself; nvcc's generated static initialisers call them, handing
+  PhysX each embedded fat binary and kernel name.
+- `CudaCtxMgr` calls `cuModuleLoadDataEx` per fat binary; `KernelWrangler` calls
+  `cuModuleGetFunction` per name in `PxgKernelNames.h`.
 - Kernels are launched with `cuLaunchKernel` through the `PxCudaContext` virtual interface
-  (495 call sites), with arguments passed as an array of pointers.
-- The GPU library is a separate shared object, `libPhysXGpu_64.so`, which the core SDK
-  `dlopen`s after `dlopen("libcuda.so.1")` (`physx/src/gpu/PxPhysXGpuModuleLoader.cpp`).
+  (495 call sites), arguments passed as an array of pointers.
+- Each `.cu` also defines an empty host function (`initSolverKernels3()` and so on, 61 in
+  all) that host code calls to force the object file to link.
+- The GPU library is a separate `libPhysXGpu_64.so`, `dlopen`ed after `libcuda.so.1`.
 
-### Driver API surface **[ran: grep counts]**
+### Driver API surface **[ran]**
 
-Almost all driver calls are in one file, `cudamanager/src/CudaContextManager.cpp` (45
-distinct `cu*` functions: init, device attributes, context create/push/pop, module load,
-streams, events, host/device memory, sync and async copies and memsets, launch). Outside it:
-SDF 3D textures in `gpunarrowphase/src/PxgGeometryManager.cpp` (`cuArray3DCreate`,
-`cuMemcpy3DAsync`, `cuTexObjectCreate`), an occupancy query, stream priority range, and
-OpenGL interop in the snippet renderer.
+45 distinct `cu*` functions, nearly all in `cudamanager/src/CudaContextManager.cpp`. Outside
+it: SDF 3D textures in `PxgGeometryManager.cpp`, an occupancy query, stream priorities, and
+OpenGL interop in the snippet renderer. Every call has a HIP counterpart except
+`cuMemcpyPeerAsync`, which is mapped to a device-to-device copy. All 15 streams PhysX
+creates are non-blocking.
 
-Host code otherwise uses a small CUDA vocabulary: `CUdeviceptr` (1,159 uses), `CUstream`,
-`CUresult`, `CUfunction`, `CUevent`, `CUDA_SUCCESS`, and about 30 `CU_*` constants.
-
-### CUDA language features in kernels **[ran: grep counts over .cu/.cuh]**
+### CUDA language features in kernels **[ran: grep counts]**
 
 | Feature | Uses | HIP status |
 |---|---|---|
-| `__shfl_sync` / `_xor_` / `_up_` / `_down_` | 644 | HIP's versions demand 64-bit masks; replaced by 32-bit shims **[ran]** |
+| `__shfl_sync` and `_xor_`/`_up_`/`_down_` forms | 644 | HIP's demand 64-bit masks; 32-bit shims supplied **[ran]** |
 | `__ballot_sync`, `__any_sync`, `__all_sync` | ~270 | same **[ran]** |
-| `WARP_SIZE` (hard-coded 32), `FULL_MASK` (0xffffffff) | 645 | needs 32-lane wavefronts; see section 5 |
+| `WARP_SIZE` 32, `FULL_MASK` 0xffffffff | 645 | needs 32-lane wavefronts; section 5 |
 | `__syncthreads`, `__shared__` | 290, 535 | native **[ran]** |
-| `__syncwarp` | 219 | shim over wave barrier **[ran: compiles; behaviour assumed]** |
-| `atomicAdd` (int and float), `atomicMax/Min/Or/And/CAS/Exch` | ~245 | native **[ran]** |
-| `__popc`, `__ffs`, `__clz` and 64-bit forms | ~170 | native; one overload added **[ran]** |
-| `__launch_bounds__`, `__forceinline__`, `__constant__`, `#pragma unroll` | ~275 | accepted **[ran: compiles]** |
-| cache-hinted loads `__ldg/__ldcg/__ldcs` | via wrappers | no AMD equivalent; plain loads **[ran: compiles]** |
-| inline PTX assembly | 9 sites, 4 files | rewritten under `__HIPCC__` (section 10) **[ran: compiles]** |
-| `tex3D<float>` / texture objects | 2 files (SDF collision) | HIP has texture objects; device reports image support **[ran: attribute only]**, sampling **[assumed]** |
-| `float4`, `uint4`, ... vector types | ~5,700 | HIP's types clash with PhysX's operators; CUDA-layout structs supplied **[ran]** |
-| `printf`, `assert` in kernels | 583, 273 | compiled out in checked/release; debug builds **[assumed]** |
-| Thrust | 1 file, in ovphysx only | rocThrust is installed; not yet tried **[assumed]** |
-| `double` in kernels | 99 uses, 10 files | supported by the hardware target **[ran: compiles]** |
+| `__syncwarp` | 219 | shim over wave barrier **[ran in simulation; not isolated]** |
+| `atomicAdd` (int, float), `atomicMax/Min/Or/And/CAS/Exch` | ~245 | native **[ran]** |
+| `__popc`, `__ffs`, `__clz`, 64-bit forms | ~170 | native; one overload added **[ran]** |
+| `__launch_bounds__`, `__forceinline__`, `__constant__`, `#pragma unroll` | ~275 | accepted **[ran]** |
+| cache-hinted loads `__ldg/__ldcg/__ldcs` | via wrappers | plain loads **[ran]** |
+| inline PTX assembly | 9 sites, 4 files | rewritten under `__HIPCC__`, section 10 **[ran]** |
+| `tex3D<float>`, texture objects | 2 files (SDF) | SDF snippet runs clean; values not checked **[ran]** |
+| `float4`, `uint4`, ... | ~5,700 | CUDA-layout structs supplied **[ran]** |
+| device function pointers | convexCore, particles | compile; these broke 12 kernels in the ZLUDA attempt **[research]**; not isolated here |
+| `printf`, `assert` in kernels | 583, 273 | compiled out in checked/release; debug **[assumed]** |
+| Thrust | 1 file, ovphysx only | rocThrust installed; untried **[assumed]** |
 
-Not used at all: cooperative groups, CUB, cuBLAS/cuSPARSE/cuSOLVER, half floats, dynamic
-parallelism, unified memory.
+Not used: cooperative groups, CUB, cuBLAS/cuSPARSE/cuSOLVER, half floats, unified memory.
 
-## 5. The one hard constraint: 32-lane wavefronts
+## 5. Constraints and findings that shape the port
 
-PhysX's kernels are written for 32-thread warps throughout. AMD GPUs come in two kinds:
+### 32-lane wavefronts only
 
-- **RDNA (Radeon RX 5000 and later, and Ryzen integrated graphics): 32-lane wavefronts.**
-  A wavefront behaves like a CUDA warp, and the kernels port without restructuring.
-- **Instinct (MI200/MI300, gfx90a/gfx942) and Vega: 64-lane wavefronts only.** Every warp
-  reduction, ballot and scan in PhysX would be wrong there. Supporting them means reworking
-  several hundred call sites and is **out of scope**.
+PhysX's kernels assume 32-thread warps everywhere. RDNA GPUs (Radeon RX 5000 and later,
+Ryzen integrated graphics) run 32-lane wavefronts and behave like CUDA warps. Instinct
+(MI200/MI300) and Vega run 64-lane wavefronts only; every warp reduction, ballot and scan
+would be wrong there, and supporting them means reworking several hundred call sites.
+**Out of scope.** The build refuses gfx8/gfx9 targets. **[ran]**
 
-`hip/compat/include/PxHipDevice.h` refuses to compile for a 64-lane target. **[ran]**
-This is why the hardware recommendation is a Radeon RX card and why MI300 cloud rental does
-not help.
+### NVIDIA behaviours PhysX relies on without saying so
+
+Each of these compiled cleanly and failed only at run time.
+
+1. **Oversized shifts.** PTX clamps shift amounts, so `1u << 40` is 0 on NVIDIA. AMD (and
+   x86) use the low bits. The radix sort builds counters with `1u << ((radix - i) << 3)`
+   and needs the out-of-range terms to vanish; without that the broad phase faulted on its
+   first sort. Fix: `hip/ptx-semantics`, an LLVM pass loaded into every kernel compile that
+   rewrites variable shifts to PTX behaviour. No source changes. **[ran]**
+2. **No type-based alias analysis.** The kernels cast between `float4`, `PxVec3` and raw
+   bytes; nvcc tolerates it, clang at `-O3` miscompiled it (garbage contact-manager
+   pointers out of the narrow phase). Fix: `-fno-strict-aliasing` for kernels. **[ran]**
+3. **Finite maths.** nvcc's `-use_fast_math` does not assume finite values; clang's
+   `-ffast-math` does. Kernels are built with `-ffp-contract=fast` only. **[read]**
+
+More of this class should be expected in the parts not yet validated numerically.
+Candidates not yet examined: float-to-int conversion out of range (PTX saturates), integer
+division by zero, reads of lanes that are inactive in a shuffle.
+
+### HIP behaviours checked and found to match CUDA **[ran]**
+
+- async copies with pageable and pinned host memory (`hip/probe/check_async_copy.cpp`);
+- a stream waiting on another stream's kernel through an event, including PhysX's habit of
+  destroying the event right after requesting the wait (`check_stream_events.cpp`).
 
 ## 6. Design of the port
 
-Goal: NVIDIA's sources stay as close to untouched as possible, so the port can follow
-upstream releases and move between 5.13 and 5.9.
+Goal: NVIDIA's sources stay close to untouched, so the port can follow upstream releases.
 
-1. **Stand-in headers** (`hip/compat/include/`). The kernel sources keep including
-   `<cuda.h>`, `<vector_types.h>` and so on; under HIP those names resolve to stand-ins that
-   map onto HIP. `PxHipDevice.h` holds the device-side layer. **[ran]**
-2. **CUDA-layout vector types.** HIP's `float4` family are class templates with their own
-   operators, which made 256 operator calls ambiguous against `cutil_math.h`. The stand-ins
-   rename HIP's types out of the way while HIP's headers are read, then define plain structs
-   with CUDA's sizes and alignments under the usual names, with `static_assert`s on every
-   layout. **[ran]** The alignment table (two- and four-component types aligned to their
-   size, capped at 16) was written from knowledge of CUDA's header, not copied from it:
-   **[assumed]** until checked against a real CUDA toolkit header. PhysX's own struct-size
-   asserts pass with it. **[ran]**
+1. **Stand-in headers** (`hip/compat/include/`). Sources keep including `<cuda.h>`,
+   `<vector_types.h>` and so on; under HIP those resolve to stand-ins. `PxHipDevice.h` is
+   the kernel side, `PxHipHost.h` the host side. **[ran]**
+2. **CUDA-layout vector types.** HIP's `float4` family are class templates whose operators
+   clash with `cutil_math.h`. The stand-ins rename HIP's types out of the way while HIP's
+   headers are read, then define plain structs with CUDA's layout, each with a
+   `static_assert`. The alignment table was written from knowledge of CUDA's header, not
+   copied: **[assumed]** until compared with a real CUDA toolkit header. PhysX's own
+   struct-size asserts pass with it on host and device. **[ran]**
 3. **Device-only kernel compilation.** Each `.cu` is compiled with
-   `clang -x hip --cuda-device-only` straight to a code object. The host never compiles the
-   kernel sources, which avoids clang's host/device overloading rules entirely. **[ran]**
-4. **Embedding and registration** (not built yet). Each code object is embedded in
-   `libPhysXGpu_64.so` as data and registered through the existing
-   `PxGpuCudaRegisterFatBinary` table, replacing nvcc's static initialisers. Kernel names
-   are resolved by asking each module, instead of relying on `__cudaRegisterFunction`.
-5. **Host driver shim** (not built yet). A host-side `cuda.h` stand-in keeps PhysX's own
-   opaque handle types (so the public `PxCudaTypes.h` ABI is unchanged) and maps the ~50
-   `cu*` calls onto `hip*`. Every one of them has a HIP counterpart in the installed
-   headers. **[ran: checked against `hip_runtime_api.h`]**
-6. **CMake**: a `PX_GPU_BACKEND` switch (CUDA default, HIP) and a `linux-clang-hip` preset.
-7. **HIPIFY is not used on the kernels.** It rewrites sources, which is the opposite of
-   goal above. It may be useful once for the host-side shim table.
+   `clang -x hip --cuda-device-only` to a code object. The host never compiles kernel
+   sources, which sidesteps clang's host/device overloading rules. **[ran]**
+4. **Embedding and registration.** `hip/cmake/PxHipBackend.cmake` embeds each code object
+   in the GPU library with `.incbin`, registers it through the existing
+   `PxGpuCudaRegisterFatBinary` table, and defines the 61 empty host functions. Kernel
+   names are resolved by asking each module. **[ran]**
+5. **Host driver shim.** `PxHipHost.h` keeps PhysX's own opaque handle types, so the
+   public `PxCudaTypes.h` ABI is unchanged, and maps the `cu*` calls onto `hip*`. **[ran]**
+6. **CMake.** `PX_GPU_BACKEND` (CUDA default, HIP) and a `linux-clang-hip` preset.
+   `PX_HIP_ARCHITECTURES` picks GPU targets; default is whatever `rocminfo` finds. **[ran]**
+7. **HIPIFY is not used.** It rewrites sources, the opposite of the goal.
+
+The port so far: 6 commits on `hip-port`, 16 upstream files modified and 1 added (section
+10), everything else new under `hip/`.
 
 ## 7. Milestones
 
-Sizes are relative; M1 is the unit. "Thread" means one working session like the kickoff.
+Sizes are relative. "Thread" means one working session like the kickoff.
 
 | # | Milestone | Size | Done when |
 |---|---|---|---|
-| M0 | Baseline: clone, CPU build and tests, ROCm on this PC, inventory, kernels compile and load | 1 thread | **done** |
-| M1 | SDK builds against HIP and runs rigid bodies on GPU | 2-3 threads | `libPhysXGpu_64.so` builds with the HIP backend; `SnippetHelloGRB` runs on the integrated GPU and matches the CPU pipeline within tolerance |
-| M2 | Full SDK GPU feature set | 4-6 threads | all 13 GPU snippets pass; a CPU-vs-GPU comparison harness covers rigid bodies, articulations, particles, deformables, SDF; results repeat on a discrete RDNA card |
+| M0 | Baseline, inventory, kernels compile and load | 1 thread | **done** |
+| M1 | SDK builds against HIP and runs rigid bodies on GPU | 2-3 threads | **mostly done in the kickoff thread.** Remaining: fix the ordering race (section 8); articulation scenes in the comparison test; multi-architecture build |
+| M2 | Full SDK GPU feature set | 4-6 threads | all 14 GPU snippets pass repeatedly; invariant-based tests for particles, deformables and SDF; same results on a discrete RDNA card |
 | M3 | ovphysx on HIP | 4-6 threads | ovphysx builds against the HIP SDK; its C and Python tests pass in GPU mode on AMD, with tensor output on CPU or ROCm devices |
-| M4 | omni.physx Kit extension | 3-5 threads, plus risk | the port carried to the SDK version of a released Kit; extension built from `omni/ovexts` source and loaded by Kit |
+| M4 | omni.physx Kit extension | 3-5 threads, plus risk | port carried to the SDK version of a released Kit; extension built from `omni/ovexts` and loaded by Kit |
 
 Main risk per milestone:
 
-- **M1**: first execution of real kernels. Expect wrong results from places where AMD and
-  NVIDIA differ silently: reading an inactive lane in a shuffle, barrier semantics, struct
-  layout shared between host and device, float contraction.
-- **M2**: breadth. 488 kernels; particles and deformables use the densest warp tricks. SDF
-  needs 3D texture sampling to work through HIP on RDNA.
-- **M3**: ovphysx hands results out as Warp arrays on CUDA devices. Warp is NVIDIA-only, so
-  GPU-resident output needs a different path (DLPack with a ROCm device for PyTorch-ROCm,
-  or CPU arrays). ovphysx also uses CUDA graphs (stream capture); HIP 7.1 declares the graph
-  API **[ran: header check]**, behaviour **[assumed]**. Its driver calls already go through
-  a `dlsym` function table (`IOptionalCuda`), which is a clean seam. **[read]**
-- **M4**: Kit is closed and ships its own NVIDIA-only plugins. The extension must work with
-  an unmodified Kit, on a machine where Kit's renderer cannot start. Whether Kit runs at all
+- **M1**: the open race. Until its cause is known it is not clear whether it is in the
+  shim, in HIP, or an ordering PhysX gets for free on NVIDIA.
+- **M2**: breadth, and no CPU reference for the GPU-only features. More silent
+  NVIDIA-only behaviours are likely. Function-pointer kernels need isolating.
+- **M3**: ovphysx hands results out as Warp arrays on CUDA devices. Warp is NVIDIA-only
+  (AMD's ROCm port of Warp covers Instinct only **[research]**), so GPU-resident output
+  needs another path: DLPack with a ROCm device for PyTorch-ROCm, or CPU arrays. ovphysx
+  also uses CUDA graphs; HIP 7.1 declares the graph API **[ran: header]**, behaviour
+  **[assumed]**. Its driver calls already go through a `dlsym` function table
+  (`IOptionalCuda`), a clean seam. **[read]**
+- **M4**: Kit is closed and ships NVIDIA-only plugins. The extension must work with an
+  unmodified Kit on a machine where Kit's renderer cannot start. Whether Kit runs at all
   without an NVIDIA GPU is unknown and may make this milestone unreachable. **[assumed]**
 
-## 8. Decisions needed from Youhana
+## 8. Open defects
 
-1. **Test GPU**: whether and when to buy or rent a discrete RDNA card (section 3).
+### Ordering race in two GPU snippets (blocks M1)
+
+`SnippetDeformableVolumeKinematic` and `SnippetDirectGPUAPIArticulation` fail
+intermittently in normal asynchronous mode. **[ran]**
+
+- `SnippetDeformableVolumeKinematic`: 10 of 10 runs crash. The host dereferences a garbage
+  contact-manager pointer from the narrow phase's lost/found list
+  (`PxgConstraintPartition.cpp:1387`).
+- `SnippetDirectGPUAPIArticulation`: a GPU memory fault (`HSA_STATUS_ERROR_MEMORY_FAULT`),
+  then a hang. Intermittent; it also passed on several runs.
+- Both pass 10 of 10 with `PHYSX_GPU_LAUNCH_SYNCHRONOUS=1` (PhysX waits on each launch) and
+  with `AMD_SERIALIZE_KERNEL=3` (HIP waits on each kernel). `AMD_SERIALIZE_COPY=3` does not
+  help; `HIP_HOST_COHERENT=1` and `AMD_DIRECT_DISPATCH=0` do not fix it.
+- So something proceeds before a kernel has finished. Ruled out by direct test: pageable
+  and pinned async copy rules, and event-based stream ordering with early event destruction.
+- Not yet examined: reads of host-mapped pinned memory that kernels write directly
+  (`*Mapped` buffers), `cuStreamQuery` used as a flush, context push/pop across worker
+  threads (HIP auto-creates and pushes a primary context, unlike CUDA **[research]**),
+  re-recording one event object every frame, and launches PhysX expects to fail with
+  `CUDA_ERROR_INVALID_VALUE` for empty grids.
+- The rigid-body comparison test and the other 12 GPU snippets pass in asynchronous mode.
+  With only 2 compute units here, a race can hide; treat "passes on gfx1036" with care.
+
+Next step: trace HIP API calls (`AMD_LOG_LEVEL=3`) for one failing frame of
+`SnippetDeformableVolumeKinematic` and find the read that precedes its kernel.
+
+### Smaller items
+
+- **LLVM 21 AMDGPU backend defect.** `convexCoreCollision.cu` fails at `-O2`/`-O3` on every
+  RDNA target tried with "SOP2/SOPC instruction requires too many immediate constants".
+  Built at `-O1` for that file only. To do: reduce and report; try AMD's LLVM (`clang-rocm`).
+- `SnippetPBF` takes 279 s on this GPU (it passes). Not investigated; may just be 2 compute units.
+- The snippet renderer's CUDA/OpenGL buffer sharing is disabled under HIP.
+- Only gfx1036 code objects are built by default; multi-target builds are untested.
+- Windows is untouched.
+
+## 9. Decisions needed from Youhana
+
+1. **Test GPU**: rent or buy, and when (section 3).
 2. **Fork location and visibility**: personal account or the `sheriax` org, public or private.
 3. **Licence for the port's own files** under `hip/` (Apache-2.0 suggested).
-
-## 9. Verified versus assumed
-
-Verified by running on this machine:
-
-- stock CPU SDK builds and 55 snippets run clean;
-- HIP runs kernels on the Granite Ridge integrated GPU with stock Ubuntu packages;
-- module load from memory, lookup by name, argument-array launch, streams, events, async
-  copies, pinned host memory;
-- warp shuffles (all four kinds), ballots, any/all, warp compaction, shared memory with
-  block barriers, int and float atomics, mixed-size kernel arguments: exact match with host
-  references;
-- every SDK kernel source compiles and links to a code object for gfx1036; all 61 load;
-  all 488 kernel names resolve.
-
-Not yet verified:
-
-- that any PhysX kernel computes the right answer (none has been executed yet);
-- `__syncwarp`, named-barrier replacement, and the rewritten warp scan under real workloads;
-- 3D texture sampling on RDNA through HIP;
-- behaviour on any GPU other than gfx1036, and with more than 2 compute units;
-- kernel `printf`/`assert` in debug builds;
-- CUDA vector alignment table against NVIDIA's header;
-- everything about ovphysx and Kit beyond reading.
+4. **sudo for future sessions**: the 1Password item linked in the kickoff thread is in a
+   vault the service-account token cannot read. Move or copy it to a readable vault, or
+   keep answering prompts.
 
 ## 10. Changes to upstream files
 
-All guarded so that the CUDA build is unchanged. Each carries a `Modified for the HIP port`
-comment.
+All guarded so that the CUDA build is unchanged; each carries a `Modified for the HIP port`
+comment. The CUDA build itself has not been re-run (no CUDA toolkit here). **[assumed intact]**
 
 | File | Change |
 |---|---|
-| `physx/source/compiler/cmake/linux/CMakeLists.txt` | `PX_WARNINGS_AS_ERRORS` option (default ON) |
-| `physx/snippets/compiler/cmake/linux/SnippetTemplate.cmake`, `SnippetVehicleTemplate.cmake` | `PX_SNIPPETS_HEADLESS` option (default OFF) |
-| `physx/include/foundation/PxPreprocessor.h` | `PX_CUDA_COMPILER` also set for `__HIPCC__` |
+| `physx/compiler/public/CMakeLists.txt` | `PX_GPU_BACKEND`; HIP backend instead of the CUDA language |
+| `physx/source/compiler/cmakegpu/CMakeLists.txt` | no `CUDA` project language under HIP |
+| `physx/source/compiler/cmakegpu/linux/CMakeLists.txt` | kernels of each GPU library built through the HIP backend |
+| `physx/source/compiler/cmake/linux/CMakeLists.txt` | `PX_WARNINGS_AS_ERRORS` option; `PX_GPU_BACKEND_HIP` define |
+| `physx/snippets/compiler/cmake/linux/SnippetTemplate.cmake`, `SnippetVehicleTemplate.cmake` | `PX_SNIPPETS_HEADLESS` option |
+| `physx/snippets/compiler/cmake/linux/SnippetRender.cmake` | HIP runtime instead of the CUDA driver library |
+| `physx/snippets/snippetrender/SnippetRender.cpp` | no CUDA/OpenGL interop under HIP |
+| `physx/buildtools/presets/public/linux-clang-hip.xml` | new preset |
+| `physx/include/foundation/PxPreprocessor.h` | `PX_CUDA_COMPILER` for `__HIPCC__`; `PX_GPU_BACKEND_HIP` default |
 | `physx/include/PxParticleGpu.h` | no `struct float4;` forward declaration under HIP |
+| `physx/source/cudamanager/src/CudaContextManager.cpp` | HIP runtime version check; `PHYSX_GPU_LAUNCH_SYNCHRONOUS` |
+| `physx/source/cudamanager/src/CudaKernelWrangler.cpp` | kernel lookup per module; nvcc registration hooks excluded |
+| `physx/source/physx/src/gpu/PxPhysXGpuModuleLoader.cpp` | no `libcuda.so.1` preload under HIP |
 | `physx/source/gpucommon/src/CUDA/atomic.cuh` | `PxRedAddGlobal`: `atomicAdd` instead of PTX `red.global.add.f32` |
 | `physx/source/gpunarrowphase/src/CUDA/convexMeshMidphase.cu` | 5 PTX `bar.sync N` barriers become `__syncthreads()` |
 | `physx/source/gpunarrowphase/src/CUDA/warpHelpers.cuh` | 2 PTX predicated warp-scan steps rewritten with `__shfl_up_sync` |
 
-## 11. Known issues and notes
+## 11. Prior art **[research]**
 
-- **LLVM 21 AMDGPU backend defect.** `convexCoreCollision.cu` fails at `-O2`/`-O3` on every
-  RDNA target tried (gfx1030, gfx1036, gfx1100, gfx1151, gfx1200) with "SOP2/SOPC
-  instruction requires too many immediate constants". It builds at `-O1`, which
-  `kernel_census.sh` applies to that file only. **[ran]** To do: reduce and report to LLVM,
-  and try AMD's own LLVM (`clang-rocm` package).
-- Building with clang 21 needs `-DPX_WARNINGS_AS_ERRORS=OFF`; upstream tests clang 14 and 18.
-- Four snippets cannot run unattended (need input files or a PVD listener) and are skipped
-  by the runner with the reason printed.
-- Research on prior art, ROCm support matrix, HIP-CPU status and hardware prices was
-  delegated; results to be merged here.
+No native HIP, SYCL, OpenCL or Vulkan port of PhysX 5 GPU was found. Two related efforts:
+
+- `github.com/eugenesflanagin-spec/physx5-zluda` (Oct 2026, one author): PhysX 5.11 built
+  PTX-only and run through ZLUDA on an RX 9070 XT with an `LD_PRELOAD` shim. 12 of 488
+  kernels fail (function pointers, in convexCore and particles). Validation is
+  "trajectories agree qualitatively".
+- SCALE (Spectral Compute) lists PhysX in its validation suite as tested and not passing;
+  its build stops at the PTX `bar` instructions. gfx1036 is not a SCALE target.
+
+ZLUDA's own PhysX work targets 32-bit legacy game PhysX. Isaac Sim skips non-NVIDIA GPUs.
+The search was one pass on 2026-11-19; Reddit and Hacker News were not searched in depth.
 
 ## 12. Reproducing
 
@@ -309,12 +364,20 @@ cd compiler/linux-clang-cpu-only-checked
 cmake -DPX_WARNINGS_AS_ERRORS=OFF -DPX_SNIPPETS_HEADLESS=ON . && make -j28
 ../../../hip/scripts/run_snippets.sh ../../bin/linux.x86_64/checked
 
-# HIP capability probe on the first AMD GPU
-hip/probe/run.sh
+# HIP build (overwrites the same bin directory)
+cd physx && ./generate_projects.sh linux-clang-hip
+make -C compiler/linux-clang-hip-checked -j28
 
-# compile and link every kernel source for an AMD GPU, then load them all
-hip/scripts/kernel_census.sh /tmp/census gfx1036
-g++ -O2 -std=c++17 -D__HIP_PLATFORM_AMD__ -Wno-deprecated-declarations \
-    -Iphysx/source/gpucommon/include hip/probe/load_kernels.cpp -o /tmp/load_kernels -lamdhip64
-/tmp/load_kernels /tmp/census/*.co
+# tests against the HIP build
+hip/probe/run.sh                                        # runtime primitives
+hip/tests/build.sh && physx/bin/linux.x86_64/checked/cpu_gpu_compare [--tgs]
+hip/scripts/run_snippets.sh physx/bin/linux.x86_64/checked
+
+# debugging aids
+PHYSX_GPU_LAUNCH_SYNCHRONOUS=1 <program>   # PhysX waits on every kernel launch
+AMD_SERIALIZE_KERNEL=3 <program>            # HIP waits on every kernel
+AMD_LOG_LEVEL=3 <program>                   # HIP API trace
 ```
+
+Note: the CPU-only and HIP presets write to the same `physx/bin/linux.x86_64/<config>`
+directory, so building one replaces the other's binaries.
