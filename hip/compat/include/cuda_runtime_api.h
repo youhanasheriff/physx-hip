@@ -3,4 +3,14 @@
 //
 // Stands in for the CUDA runtime API header.
 
+#ifndef PX_HIP_COMPAT_CUDA_RUNTIME_API_H
+#define PX_HIP_COMPAT_CUDA_RUNTIME_API_H
+
+#if defined(__HIPCC__)
 #include "PxHipDevice.h"
+#else
+#include "PxHipHost.h"
+#include "PxHipVectorTypes.h"
+#endif
+
+#endif

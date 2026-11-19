@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Added for the HIP port; not part of upstream PhysX. -->
+<preset name="linux-clang-hip" comment="Linux clang PhysX SDK with the GPU projects built for AMD GPUs through HIP">
+  <platform targetPlatform="linux" compiler="clang" />
+  <CMakeSwitches>
+    <cmakeSwitch name="PX_BUILDSNIPPETS" value="True" comment="Generate the snippets" />
+    <cmakeSwitch name="PX_BUILDPVDRUNTIME" value="True" comment="Generate the OmniPVD project" />
+    <cmakeSwitch name="PX_GENERATE_STATIC_LIBRARIES" value="True" comment="Generate static libs" />
+    <cmakeSwitch name="PX_GENERATE_GPU_PROJECTS" value="True" comment="Generate the GPU projects" />
+    <cmakeSwitch name="PX_GENERATE_GPU_PROJECTS_ONLY" value="False" comment="Generate ONLY the GPU projects" />
+    <cmakeSwitch name="PX_GENERATE_GPU_STATIC_LIBRARIES" value="False" comment="Generate PhysXGPU static libraries" />
+    <cmakeSwitch name="PX_SCALAR_MATH" value="False" comment="Disable SIMD math" />
+    <cmakeSwitch name="PX_FLOAT_POINT_PRECISE_MATH" value="False" comment="Float point precise math" />
+    <cmakeSwitch name="PX_WARNINGS_AS_ERRORS" value="False" comment="Newer compilers than upstream tests raise extra warnings" />
+    <cmakeSwitch name="PX_SNIPPETS_HEADLESS" value="True" comment="Snippets run a fixed number of steps and exit" />
+  </CMakeSwitches>
+  <CMakeParams>
+    <cmakeParam name="PX_GPU_BACKEND" value="HIP" comment="Build the GPU projects with HIP instead of CUDA" />
+    <cmakeParam name="CMAKE_INSTALL_PREFIX" value="install/linux-clang-hip/PhysX" comment="Install path relative to PhysX SDK root" />
+  </CMakeParams>
+</preset>

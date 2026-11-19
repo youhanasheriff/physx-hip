@@ -168,6 +168,19 @@ namespace physx
 	{
 		static void* s_library = NULL;
 
+#if PX_GPU_BACKEND_HIP
+		// Modified for the HIP port: the GPU library links the HIP runtime itself, so there is no
+		// separate driver library to load first.
+		if (s_library == NULL)
+		{
+			s_library = dlopen(gPhysXGpuLibraryName, RTLD_NOW);
+			if (!s_library)
+			{
+				reportError(PX_FL, "Could not load %s: %s\n", gPhysXGpuLibraryName, dlerror());
+				return;
+			}
+		}
+#else
 		if (s_library == NULL)
 		{
 			// load libcuda.so.1 here since gcc configured with --as-needed won't link to it
@@ -184,6 +197,7 @@ namespace physx
 				return;
 			}
 		}
+#endif // PX_GPU_BACKEND_HIP
 
 		// no UpdateLoader
 		if (s_library)

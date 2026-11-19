@@ -494,6 +494,12 @@ protected:                  \
 	Class(const Class&);    \
 	Class& operator=(const Class&);
 
+// Modified for the HIP port: PX_GPU_BACKEND_HIP is 1 when the GPU library is built with HIP
+// (AMD GPUs) instead of CUDA. The build sets it; it defaults to the CUDA backend.
+#ifndef PX_GPU_BACKEND_HIP
+	#define PX_GPU_BACKEND_HIP 0
+#endif
+
 //#define DISABLE_CUDA_PHYSX
 #ifndef DISABLE_CUDA_PHYSX
 	//CUDA is currently supported on x86_64 windows and linux, and ARM_64 linux

@@ -4,7 +4,12 @@
 cmake_minimum_required(VERSION 3.21)
 
 # PROJECT(CUDA) will enable building CUDA files ( .cu )
-PROJECT(PhysX C CXX CUDA)
+# Modified for the HIP port: under the HIP backend the kernels are built by PxHipBackend.cmake instead.
+IF(PX_GPU_BACKEND STREQUAL "HIP")
+	PROJECT(PhysX C CXX)
+ELSE()
+	PROJECT(PhysX C CXX CUDA)
+ENDIF()
 
 IF(DEFINED ENV{PM_winsdk_PATH} AND NOT "$ENV{PM_winsdk_PATH}" STREQUAL "" AND DEFINED ENV{PM_msvc_PATH} AND NOT "$ENV{PM_msvc_PATH}" STREQUAL "")
 	SET(CMAKE_VS_SDK_INCLUDE_DIRECTORIES "$ENV{PM_winsdk_PATH}/include/ucrt;$ENV{PM_winsdk_PATH}/include/um;$ENV{PM_winsdk_PATH}/include/shared")

@@ -497,6 +497,16 @@ CudaCtxMgr::CudaCtxMgr(const PxCudaContextManagerDesc& desc, PxErrorCallback& er
  */
 bool CudaCtxMgr::safeDelayImport(PxErrorCallback& errorCallback)
 {
+#if PX_GPU_BACKEND_HIP
+	// Modified for the HIP port: the GPU library links the HIP runtime directly, so there is no
+	// delay-loaded driver to guard and no CUDA driver version to check; read the HIP runtime version.
+	if (cuDriverGetVersion(&mDriverVersion) != CUDA_SUCCESS)
+	{
+		errorCallback.reportError(PxErrorCode::eINTERNAL_ERROR, "Retrieving the HIP runtime version failed.", PX_FL);
+		return false;
+	}
+	return true;
+#else
 #if PX_WIN32 || PX_WIN64
 	HMODULE hCudaDriver = LoadLibrary("nvcuda.dll");
 #elif PX_LINUX
@@ -558,6 +568,7 @@ bool CudaCtxMgr::safeDelayImport(PxErrorCallback& errorCallback)
 #endif
 
 	return true;
+#endif // PX_GPU_BACKEND_HIP
 }
 
 void CudaCtxMgr::release()
@@ -772,6 +783,13 @@ CudaCtx::CudaCtx(PxDeviceAllocatorCallback* deviceCallback, PxPinnedHostAllocato
 	mLaunchSynchronous = true;
 #else
 	mLaunchSynchronous = launchSynchronous;
+#endif
+#if PX_GPU_BACKEND_HIP
+	// Modified for the HIP port: PHYSX_GPU_LAUNCH_SYNCHRONOUS=1 waits for every kernel as it is
+	// launched, so that a failing kernel is reported at its own launch site.
+	const char* syncEnv = getenv("PHYSX_GPU_LAUNCH_SYNCHRONOUS");
+	if (syncEnv && syncEnv[0] == '1')
+		mLaunchSynchronous = true;
 #endif
 }
 

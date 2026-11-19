@@ -25,7 +25,12 @@ IF(NOT CMAKE_CROSSCOMPILING AND (TARGET_BUILD_PLATFORM STREQUAL "windows" OR TAR
 	OPTION(PX_GENERATE_GPU_PROJECTS "Generate the GPU projects, if possible." OFF)
 	OPTION(PX_GENERATE_GPU_PROJECTS_ONLY "Generate ONLY the GPU projects, if possible." OFF)
 
-	IF(PX_GENERATE_GPU_PROJECTS OR PX_GENERATE_GPU_PROJECTS_ONLY)
+	# Modified for the HIP port: PX_GPU_BACKEND selects the GPU programming model the GPU projects
+	# are built with. CUDA is upstream behaviour; HIP builds the same sources for AMD GPUs.
+	SET(PX_GPU_BACKEND "CUDA" CACHE STRING "GPU backend for the GPU projects: CUDA or HIP")
+	IF((PX_GENERATE_GPU_PROJECTS OR PX_GENERATE_GPU_PROJECTS_ONLY) AND PX_GPU_BACKEND STREQUAL "HIP")
+		INCLUDE(${PHYSX_ROOT_DIR}/../hip/cmake/PxHipBackend.cmake)
+	ELSEIF(PX_GENERATE_GPU_PROJECTS OR PX_GENERATE_GPU_PROJECTS_ONLY)
 		# Will enable building CUDA files ( .cu )
 		ENABLE_LANGUAGE(CUDA)
 		# The FIND_PACKAGE(CUDAToolkit) makes it easier if you have CUDA language enabled to link to

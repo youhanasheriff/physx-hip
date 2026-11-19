@@ -5,7 +5,8 @@
 
 #include "foundation/PxPreprocessor.h"
 
-#define USE_CUDA_INTEROP (PX_SUPPORT_GPU_PHYSX)
+// Modified for the HIP port: OpenGL buffer sharing is CUDA-only here; under HIP the renderer copies through the host.
+#define USE_CUDA_INTEROP (PX_SUPPORT_GPU_PHYSX && !PX_GPU_BACKEND_HIP)
 
 #if (PX_SUPPORT_GPU_PHYSX && USE_CUDA_INTEROP)
 #if PX_LINUX && PX_CLANG

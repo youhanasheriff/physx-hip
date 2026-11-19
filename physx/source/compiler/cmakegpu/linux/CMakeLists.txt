@@ -59,6 +59,20 @@ INCLUDE(PhysXArticulationGpu.cmake)
 INCLUDE(PhysXGpuDependencies.cmake)
 INCLUDE(PhysXGpu.cmake)	 # must be last
 
+# Modified for the HIP port: build, embed and register the kernels of each GPU library with HIP.
+IF(PX_GPU_BACKEND STREQUAL "HIP")
+	px_hip_add_kernels(PhysXBroadphaseGpu ${PHYXGPU_BROADPHASE_CUDA_KERNELS})
+	px_hip_add_kernels(PhysXCommonGpu ${PHYXGPU_COMMON_CUDA_KERNELS})
+	px_hip_add_kernels(PhysXNarrowphaseGpu ${PHYXGPU_NARROWPHASE_CUDA_KERNELS})
+	px_hip_add_kernels(PhysXSimulationControllerGpu ${PHYXGPU_SIMCONTROLLER_CUDA_KERNELS})
+	px_hip_add_kernels(PhysXSolverGpu ${PHYXGPU_SOLVER_CUDA_KERNELS})
+	px_hip_add_kernels(PhysXArticulationGpu ${PHYXGPU_ARTICULATION_CUDA_KERNELS})
+	px_hip_setup_target(PhysXCudaContextManager)
+	px_hip_setup_target(PhysXGpuDependencies)
+	px_hip_setup_target(PhysXGpu)
+	TARGET_LINK_LIBRARIES(PhysXGpu PRIVATE hip::host)
+ENDIF()
+
 SET_PROPERTY(TARGET PhysXBroadphaseGpu PROPERTY FOLDER "PhysX SDK/GPU")
 SET_PROPERTY(TARGET PhysXCommonGpu PROPERTY FOLDER "PhysX SDK/GPU")
 SET_PROPERTY(TARGET PhysXNarrowphaseGpu PROPERTY FOLDER "PhysX SDK/GPU")

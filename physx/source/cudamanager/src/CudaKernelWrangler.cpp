@@ -65,6 +65,29 @@ KernelWrangler::KernelWrangler(PxCudaContextManager& cudaContextManager, PxError
 
 	if (mCudaContextManager.tryAcquireContext())
 	{
+#if PX_GPU_BACKEND_HIP
+		// Modified for the HIP port: kernels are not registered by name at load time (that is done by
+		// nvcc-generated code in the CUDA build), so ask each loaded module for the kernel instead.
+		const PxU32 numModules = PxGpuGetCudaModuleTableSize();
+		PX_UNUSED(cuFunctionTable);
+		PX_UNUSED(cuFunctionTableSize);
+		for (uint32_t i = 0; i < numFuncs; ++i)
+		{
+			bool found = false;
+			for (PxU32 j = 0; j < numModules && !found; ++j)
+			{
+				if (cuModules[j])
+					found = (mCudaContext->moduleGetFunction(&mCuFunctions[i], cuModules[j], funcNames[i]) == CUDA_SUCCESS) && mCuFunctions[i];
+			}
+			if (!found)
+			{
+				char buffer[256];
+				Pxsnprintf(buffer, 256, "Could not find kernel '%s' in any loaded HIP module.", funcNames[i]);
+				mErrorCallback.reportError(PxErrorCode::eINTERNAL_ERROR, buffer, PX_FL);
+				mError = true;
+			}
+		}
+#else
 		for (uint32_t i = 0; i < numFuncs; ++i)
 		{
 			// search through all known functions
@@ -97,6 +120,7 @@ KernelWrangler::KernelWrangler(PxCudaContextManager& cudaContextManager, PxError
 				}
 			}
 		}
+#endif // PX_GPU_BACKEND_HIP
 		mCudaContextManager.releaseContext();
 	}
 	else 
@@ -108,6 +132,9 @@ KernelWrangler::KernelWrangler(PxCudaContextManager& cudaContextManager, PxError
 	}
 }
 
+// Modified for the HIP port: the rest of this file intercepts the registration calls that
+// nvcc-compiled objects make. HIP kernels are embedded and registered by generated code instead.
+#if !PX_GPU_BACKEND_HIP
 /*
  * Workaround hacks for using nvcc --compiler output object files
  * without linking with CUDART.  We must implement our own versions
@@ -207,3 +234,5 @@ cudaError_t CUDARTAPI __cudaPopCallConfiguration(
 {
 	return cudaSuccess;
 }
+
+#endif // !PX_GPU_BACKEND_HIP
