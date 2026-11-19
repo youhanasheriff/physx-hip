@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Youhana Sheriff
+# SPDX-License-Identifier: Apache-2.0
+#
 # Runs every PhysX snippet binary in a bin directory headlessly and reports pass/fail.
 # The snippets must have been built with -DPX_SNIPPETS_HEADLESS=ON, otherwise they open
 # a window and never exit.

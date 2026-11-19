@@ -1,3 +1,70 @@
+# PhysX on AMD GPUs (HIP port)
+
+An unofficial port of the GPU side of [NVIDIA PhysX](https://github.com/NVIDIA-Omniverse/PhysX)
+from CUDA to AMD [HIP](https://github.com/ROCm/HIP) (ROCm), so that PhysX's GPU pipeline can
+run on Radeon hardware.
+
+**This is work in progress and not ready for production use.** It is not affiliated with,
+endorsed by or supported by NVIDIA or AMD. PhysX and Omniverse are trademarks of NVIDIA
+Corporation. Report problems with the port in this repository's issue tracker, not to NVIDIA.
+
+## Where it stands
+
+Tested on one GPU so far: the integrated Radeon of a Ryzen 9 9950X (`gfx1036`), Ubuntu 26.04,
+ROCm 7.1.
+
+| | |
+|---|---|
+| PhysX SDK 5.13.0 builds with a HIP backend; all 61 kernel sources (491 kernels) compile and load | works |
+| Rigid bodies on the GPU pipeline, compared against the CPU pipeline | 8 of 8 scenes agree, PGS and TGS |
+| GPU snippets (particles, deformables, SDF, direct GPU API) | 12 of 14 run clean; results not yet validated numerically |
+| `SnippetDeformableVolumeKinematic`, `SnippetDirectGPUAPIArticulation` | crash: an open ordering race |
+| Discrete Radeon cards, performance, Windows | untested |
+| ovphysx and the omni.physx Kit extension | not started |
+
+Only GPUs with 32-lane wavefronts are supported: Radeon RX 5000 series and later, and Ryzen
+integrated graphics. AMD Instinct accelerators run 64-lane wavefronts and are out of scope.
+
+[PORTING.md](PORTING.md) has the full record: what was verified and how, the design, the
+NVIDIA-specific behaviours PhysX depends on, open defects, and the milestone plan.
+
+## Building
+
+Needs a Linux machine with ROCm 7.1 or later (`hipcc`, `libamdhip64-dev`, `rocminfo`),
+clang, and a user in the `render` and `video` groups.
+
+```sh
+cd physx
+./generate_projects.sh linux-clang-hip
+make -C compiler/linux-clang-hip-checked -j"$(nproc)"
+cd ..
+
+hip/probe/run.sh                                   # checks the GPU and HIP runtime
+hip/tests/build.sh && physx/bin/linux.x86_64/checked/cpu_gpu_compare
+hip/scripts/run_snippets.sh physx/bin/linux.x86_64/checked
+```
+
+The CUDA build is still selected by default (`PX_GPU_BACKEND=CUDA`) and is meant to be
+unchanged by the port.
+
+## What is in the port
+
+- `hip/`: everything new. Stand-in headers that map the CUDA vocabulary onto HIP, the CMake
+  backend that compiles and embeds the kernels, an LLVM pass that reproduces NVIDIA's shift
+  behaviour, a capability probe, and tests.
+- A small number of guarded edits to NVIDIA's sources, each marked
+  `Modified for the HIP port` and listed in [PORTING.md](PORTING.md).
+
+## Licence
+
+NVIDIA's code keeps its licences and notices: BSD-3-Clause at the root, Apache-2.0 for the
+PhysX SDK (`physx/LICENSE.md`) and ovphysx. The port's own files under `hip/` and its
+changes to the SDK are Apache-2.0 ([hip/LICENSE](hip/LICENSE)).
+
+The base is upstream tag `ovphysx-0.8.0`. NVIDIA's original README follows unchanged.
+
+---
+
 # NVIDIA PhysX
 
 <details>

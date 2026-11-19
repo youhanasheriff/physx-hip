@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Youhana Sheriff
+# SPDX-License-Identifier: Apache-2.0
+#
 # Compiles every PhysX kernel source (.cu) for an AMD GPU with the HIP compiler, device
 # code only, and reports which files compile. Used to measure how much of the kernel
 # code builds under HIP and to group the remaining errors.

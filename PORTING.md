@@ -4,11 +4,13 @@ Port of the GPU side of NVIDIA PhysX from CUDA to AMD HIP (ROCm), so that PhysX'
 pipeline, then ovphysx, then the omni.physx Kit extension can run on AMD GPUs.
 
 This file is the running record: status, decisions, and what has been verified versus
-assumed. Claims are tagged **[ran]** (executed on this machine and observed), **[read]**
-(established by reading source or headers), **[research]** (from the delegated web research
-of 2026-11-19, with its sources; not re-checked here) or **[assumed]** (not yet checked).
+assumed. Claims are tagged **[ran]** (executed on the test machine and observed), **[read]**
+(established by reading source or headers), **[research]** (from a web search on
+2026-11-19; not re-checked here) or **[assumed]** (not yet checked).
 
-Last updated: 2026-11-19, end of the kickoff thread.
+The port is unofficial and is not affiliated with NVIDIA or AMD.
+
+Last updated: 2026-11-19.
 
 ## 1. Status
 
@@ -16,7 +18,7 @@ Last updated: 2026-11-19, end of the kickoff thread.
 |---|---|
 | Upstream cloned, base pinned, working branch `hip-port` | done **[ran]** |
 | Stock CPU build (clang 21) and snippets | 55 pass, 0 fail, 4 skipped **[ran]** |
-| ROCm 7.1 installed; HIP runs on this PC's integrated GPU (gfx1036) | done **[ran]** |
+| ROCm 7.1 installed; HIP runs on the test machine's integrated GPU (gfx1036) | done **[ran]** |
 | HIP capability probe (PhysX-style kernels and driver calls) | 135 checks, 0 failed **[ran]** |
 | All 61 SDK kernel sources compile and link for AMD GPUs | done **[ran]** |
 | `libPhysXGpu_64.so` builds with the HIP backend through CMake | done **[ran]** |
@@ -32,12 +34,11 @@ calling milestone 1 complete: an ordering race that crashes two GPU snippets (se
 
 ## 2. Base
 
-- Upstream: `github.com/NVIDIA-Omniverse/PhysX`, remote name `upstream`, push URL disabled.
+- Upstream: `github.com/NVIDIA-Omniverse/PhysX`.
 - **Pinned base: tag `ovphysx-0.8.0`, commit `7d6f6ac8b`, PhysX SDK 5.13.0.** **[ran]**
 - Working branch: `hip-port`.
-- Fork: `github.com/youhanasheriff/physx-hip` (remote `origin`), private, created
-  2026-11-19 as a standalone repository, not a GitHub fork of NVIDIA's. Nothing is pushed
-  to, or opened against, NVIDIA's repository.
+- This repository: `github.com/youhanasheriff/physx-hip`, public since 2026-11-19. It is a
+  standalone repository, not a GitHub fork of NVIDIA's.
 
 Why this tag and not `110.3-omni-and-physx-5.9.1` **[ran: git tree comparison]**:
 
@@ -55,22 +56,23 @@ GPU directories differ between the two tags by about 12.9k added / 12.2k removed
 
 ### Licence
 
-The brief said BSD-3. That is only the root `LICENSE.md`. **The PhysX SDK and ovphysx are
-Apache-2.0** at both tags: `physx/LICENSE.md`, and all 1,839 SPDX headers under
-`physx/source` and `physx/include`. **[ran]** Consequences for a fork:
+The root `LICENSE.md` is BSD-3-Clause, but **the PhysX SDK and ovphysx are Apache-2.0** at
+both tags: `physx/LICENSE.md`, and all 1,839 SPDX headers under `physx/source` and
+`physx/include`. **[ran]** Consequences for a fork:
 
 - keep every existing copyright and SPDX line (done; no header has been touched);
 - Apache-2.0 section 4(b): modified files must say they were changed. Every edit to an
   upstream file carries a `Modified for the HIP port` comment; section 10 lists them;
-- new files under `hip/` say they are not part of upstream PhysX. They have no licence
-  header yet: **decision needed** (Apache-2.0 is the obvious choice);
+- new files under `hip/` say they are not part of upstream PhysX and are Apache-2.0, with
+  their own copyright line and SPDX header; the licence text is in `hip/LICENSE`;
 - ovphysx's prebuilt binaries are under the NVIDIA Omniverse License; only source is used.
 
 ## 3. Hardware and test strategy
 
-### What this PC can do
+### The test machine
 
 Ryzen 9 9950X, integrated Radeon (Granite Ridge, PCI `1002:13c0`), Ubuntu 26.04.1, kernel 7.0.
+No discrete GPU.
 
 - Ubuntu 26.04 packages ROCm 7.1 in `universe`. Installed with apt: `hipcc`,
   `libamdhip64-dev`, `rocminfo`, `rocm-smi`, `hipify-clang`, `librocthrust-dev`,
@@ -79,13 +81,12 @@ Ryzen 9 9950X, integrated Radeon (Granite Ridge, PCI `1002:13c0`), Ubuntu 26.04.
   addressable** (system RAM). No `HSA_OVERRIDE_GFX_VERSION` or other override needed. **[ran]**
 - It is not in AMD's official support matrix, but AMD's own build system marks gfx1036 as
   sanity tested and release ready, and AMD publishes device packages for it. **[research]**
-- Device access: the user was added to the `render` and `video` groups (effective at next
-  login). For the current boot a temporary ACL was set on `/dev/kfd` and
-  `/dev/dri/renderD128`; it disappears at reboot. **[ran]**
+- Device access: the user must be in the `render` and `video` groups to open `/dev/kfd`
+  and the render node. **[ran]**
 - The newest ROCm is 10.2.0 (2026-11-18), which officially supports Ubuntu 26.04.1 and can
-  be installed without root from pip or tarballs. **[research]** Not tried; 7.1 is what runs here.
+  be installed without root from pip or tarballs. **[research]** Not tried; 7.1 is what was used.
 
-**Correctness work can be done on this PC.** What it cannot give: performance numbers that
+**Correctness work can be done on this machine.** What it cannot give: performance numbers that
 mean anything (PBF takes 279 s here), coverage of a second GPU generation, behaviour on a
 card with real VRAM, and behaviour with more than 2 compute units, where races that hide
 here may show.
@@ -111,13 +112,14 @@ here may show.
 5. **ovphysx's own tests** (191 Python, 93 C) at milestone 3.
 6. **HIP-CPU is out.** It was archived on 2026-07-07, has no `hipModuleLoadData`, and its
    warp size is the CPU's SIMD width. **[research]** chipStar on a CPU lacks inline-assembly
-   handling and 3D textures. Neither is needed with a working GPU on the desk.
+   handling and 3D textures. Neither is needed with a working GPU at hand.
 
-### Hardware recommendation
+### Hardware still needed
 
-Not needed now, and not needed to finish milestone 1. Needed before anyone says "works on
-AMD": one officially supported RDNA card, for a second GPU generation, real VRAM limits,
-more compute units and usable performance. Prices **[research, Nov 2026, volatile]**:
+Nothing more is needed to finish milestone 1. Before anyone can say "works on AMD", the
+port has to run on at least one officially supported RDNA card: a second GPU generation,
+real VRAM limits, more compute units and usable performance. Options
+**[research, Nov 2026, prices volatile]**:
 
 | Option | Cost | Notes |
 |---|---|---|
@@ -126,10 +128,10 @@ more compute units and usable performance. Prices **[research, Nov 2026, volatil
 | Buy RX 9060 XT 16 GB (gfx1200) | about USD 730 street, INR 60-80k in India | newest generation, 16 GB; prices rising |
 | Rent Instinct MI300X (DigitalOcean, Hot Aisle) | USD 2-3/hour | **no use here**: 64-lane wavefronts, see section 5 |
 
-Recommendation: when milestone 2 starts, rent the R9700 for a few hours first (a few euros)
-to validate on a second, officially supported GPU. Buy a card only if regular performance
-work is wanted; then the RX 9060 XT 16 GB is the better fit, the RX 7600 the cheaper one.
-Any of them fits the 9950X board; the integrated GPU can stay as a second test target.
+Plan: validate on a second, officially supported GPU when milestone 2 starts. Which one is
+not decided. **Reports from anyone who builds this on a discrete Radeon card are welcome**:
+the output of `hip/probe/run.sh`, `cpu_gpu_compare` and `hip/scripts/run_snippets.sh` is
+what is needed.
 
 ## 4. How CUDA is used in PhysX (inventory)
 
@@ -242,20 +244,20 @@ Goal: NVIDIA's sources stay close to untouched, so the port can follow upstream 
    `PX_HIP_ARCHITECTURES` picks GPU targets; default is whatever `rocminfo` finds. **[ran]**
 7. **HIPIFY is not used.** It rewrites sources, the opposite of the goal.
 
-The port so far: 6 commits on `hip-port`, 16 upstream files modified and 1 added (section
-10), everything else new under `hip/`.
+The port so far: 17 upstream files modified and 1 added (section 10), everything else new
+under `hip/`.
 
 ## 7. Milestones
 
-Sizes are relative. "Thread" means one working session like the kickoff.
+Sizes are relative: one unit is the work milestone 0 took.
 
 | # | Milestone | Size | Done when |
 |---|---|---|---|
-| M0 | Baseline, inventory, kernels compile and load | 1 thread | **done** |
-| M1 | SDK builds against HIP and runs rigid bodies on GPU | 2-3 threads | **mostly done in the kickoff thread.** Remaining: fix the ordering race (section 8); articulation scenes in the comparison test; multi-architecture build |
-| M2 | Full SDK GPU feature set | 4-6 threads | all 14 GPU snippets pass repeatedly; invariant-based tests for particles, deformables and SDF; same results on a discrete RDNA card |
-| M3 | ovphysx on HIP | 4-6 threads | ovphysx builds against the HIP SDK; its C and Python tests pass in GPU mode on AMD, with tensor output on CPU or ROCm devices |
-| M4 | omni.physx Kit extension | 3-5 threads, plus risk | port carried to the SDK version of a released Kit; extension built from `omni/ovexts` and loaded by Kit |
+| M0 | Baseline, inventory, kernels compile and load | 1 | **done** |
+| M1 | SDK builds against HIP and runs rigid bodies on GPU | 2-3 | **mostly done.** Remaining: fix the ordering race (section 8); articulation scenes in the comparison test; multi-architecture build |
+| M2 | Full SDK GPU feature set | 4-6 | all 14 GPU snippets pass repeatedly; invariant-based tests for particles, deformables and SDF; same results on a discrete RDNA card |
+| M3 | ovphysx on HIP | 4-6 | ovphysx builds against the HIP SDK; its C and Python tests pass in GPU mode on AMD, with tensor output on CPU or ROCm devices |
+| M4 | omni.physx Kit extension | 3-5, plus risk | port carried to the SDK version of a released Kit; extension built from `omni/ovexts` and loaded by Kit |
 
 Main risk per milestone:
 
@@ -306,25 +308,31 @@ Next step: trace HIP API calls (`AMD_LOG_LEVEL=3`) for one failing frame of
 - **LLVM 21 AMDGPU backend defect.** `convexCoreCollision.cu` fails at `-O2`/`-O3` on every
   RDNA target tried with "SOP2/SOPC instruction requires too many immediate constants".
   Built at `-O1` for that file only. To do: reduce and report; try AMD's LLVM (`clang-rocm`).
-- `SnippetPBF` takes 279 s on this GPU (it passes). Not investigated; may just be 2 compute units.
+- `SnippetPBF` takes 279 s on the test GPU (it passes). Not investigated; may just be 2 compute units.
 - The snippet renderer's CUDA/OpenGL buffer sharing is disabled under HIP.
 - Only gfx1036 code objects are built by default; multi-target builds are untested.
 - Windows is untouched.
 
-## 9. Decisions needed from Youhana
+## 9. Decisions
 
-1. **Test GPU**: rent or buy, and when (section 3).
-2. **Fork visibility**: the fork is on the personal account and private. Whether and when
-   to make it public is open; settle the licence question first.
-3. **Licence for the port's own files** under `hip/` (Apache-2.0 suggested).
+| Question | State |
+|---|---|
+| Where the port lives | `github.com/youhanasheriff/physx-hip`, public (2026-11-19) |
+| Licence for the port's own files | Apache-2.0, the same as the SDK (2026-11-19) |
+| Second test GPU | open; needed for milestone 2 (section 3) |
+
+Nothing is pushed to, or opened against, NVIDIA's repository. Kit's closed binaries are not
+reverse-engineered; the work uses only the published source.
 
 ## 10. Changes to upstream files
 
-All guarded so that the CUDA build is unchanged; each carries a `Modified for the HIP port`
-comment. The CUDA build itself has not been re-run (no CUDA toolkit here). **[assumed intact]**
+Source and build changes are guarded so that the CUDA build is unchanged; each carries a
+`Modified for the HIP port` comment. The CUDA build itself has not been re-run (no CUDA
+toolkit on the test machine). **[assumed intact]**
 
 | File | Change |
 |---|---|
+| `README.md` | notice and status of the port added above NVIDIA's text, which is unchanged |
 | `physx/compiler/public/CMakeLists.txt` | `PX_GPU_BACKEND`; HIP backend instead of the CUDA language |
 | `physx/source/compiler/cmakegpu/CMakeLists.txt` | no `CUDA` project language under HIP |
 | `physx/source/compiler/cmakegpu/linux/CMakeLists.txt` | kernels of each GPU library built through the HIP backend |
@@ -346,10 +354,10 @@ comment. The CUDA build itself has not been re-run (no CUDA toolkit here). **[as
 
 No native HIP, SYCL, OpenCL or Vulkan port of PhysX 5 GPU was found. Two related efforts:
 
-- `github.com/eugenesflanagin-spec/physx5-zluda` (Oct 2026, one author): PhysX 5.11 built
-  PTX-only and run through ZLUDA on an RX 9070 XT with an `LD_PRELOAD` shim. 12 of 488
-  kernels fail (function pointers, in convexCore and particles). Validation is
-  "trajectories agree qualitatively".
+- `github.com/eugenesflanagin-spec/physx5-zluda` (Oct 2026): PhysX 5.11 built PTX-only and
+  run through ZLUDA on an RX 9070 XT with an `LD_PRELOAD` shim. Its notes report 12 of 488
+  kernels failing (function pointers, in convexCore and particles) and trajectories that
+  agree qualitatively.
 - SCALE (Spectral Compute) lists PhysX in its validation suite as tested and not passing;
   its build stops at the PTX `bar` instructions. gfx1036 is not a SCALE target.
 
@@ -362,12 +370,12 @@ The search was one pass on 2026-11-19; Reddit and Hacker News were not searched 
 # stock CPU build and tests
 cd physx && ./generate_projects.sh linux-clang-cpu-only
 cd compiler/linux-clang-cpu-only-checked
-cmake -DPX_WARNINGS_AS_ERRORS=OFF -DPX_SNIPPETS_HEADLESS=ON . && make -j28
+cmake -DPX_WARNINGS_AS_ERRORS=OFF -DPX_SNIPPETS_HEADLESS=ON . && make -j"$(nproc)"
 ../../../hip/scripts/run_snippets.sh ../../bin/linux.x86_64/checked
 
 # HIP build (overwrites the same bin directory)
 cd physx && ./generate_projects.sh linux-clang-hip
-make -C compiler/linux-clang-hip-checked -j28
+make -C compiler/linux-clang-hip-checked -j"$(nproc)"
 
 # tests against the HIP build
 hip/probe/run.sh                                        # runtime primitives

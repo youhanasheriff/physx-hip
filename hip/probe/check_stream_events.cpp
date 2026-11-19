@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Youhana Sheriff
+// SPDX-License-Identifier: Apache-2.0
+//
 // Checks that a kernel on one HIP stream waits for a kernel on another stream when PhysX's
 // synchronizeStreams pattern is used: record an event on the first stream, make the second stream wait
 // on it, and (as PhysX does) destroy the event straight away.

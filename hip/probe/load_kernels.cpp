@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Youhana Sheriff
+// SPDX-License-Identifier: Apache-2.0
+//
 // Loads PhysX kernel code objects on a GPU and resolves every kernel PhysX asks for by name.
 //
 // This file is part of the HIP port and is not part of upstream PhysX.

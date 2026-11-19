@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Youhana Sheriff
+// SPDX-License-Identifier: Apache-2.0
+//
 // HIP capability probe: host side.
 //
 // This file is part of the HIP port and is not part of upstream PhysX.

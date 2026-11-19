@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Youhana Sheriff
+// SPDX-License-Identifier: Apache-2.0
+//
 // LLVM pass plugin that gives PhysX kernels the integer shift behaviour of NVIDIA's PTX
 // when they are compiled for AMD GPUs.
 //

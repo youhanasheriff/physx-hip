@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Youhana Sheriff
+// SPDX-License-Identifier: Apache-2.0
+//
 // Runs the same rigid-body scenes on PhysX's CPU pipeline and on its GPU pipeline and
 // compares the results.
 //

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Youhana Sheriff
+// SPDX-License-Identifier: Apache-2.0
+//
 // Checks that HIP async host<->device copies follow CUDA's rules for pageable and pinned host memory:
 // a pageable source is staged before the call returns, a pageable destination is filled before the call
 // returns, and pinned memory is read or written when the copy actually runs.

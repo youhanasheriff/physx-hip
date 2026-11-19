@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Youhana Sheriff
+# SPDX-License-Identifier: Apache-2.0
+#
 # Builds the port's tests against a PhysX build.
 #
 # usage: build.sh [physx-bin-dir] [config]

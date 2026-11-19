@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Youhana Sheriff
+# SPDX-License-Identifier: Apache-2.0
+#
 # Builds and runs the HIP capability probe on one GPU.
 #
 # usage: run.sh [offload-arch] [device-ordinal]
