@@ -132,3 +132,25 @@ extern "C" __global__ void probeArgs(bool flag, unsigned int n, float scale, dou
 	const unsigned long long packed = (unsigned long long)(value) | ((unsigned long long)(tag) << 40) | ((unsigned long long)(flag ? 1 : 0) << 48);
 	desc->out[gid] = packed;
 }
+
+// Writes a known value to every element after a short busy loop, which also makes it usable
+// as a kernel that keeps the GPU busy. Used by check_idle_gpu_keeps_writes.cpp.
+extern "C" __global__ void probeDelayedFill(unsigned int* out, unsigned int n, unsigned int value, unsigned int spin)
+{
+	const unsigned int gid = blockIdx.x * blockDim.x + threadIdx.x;
+	if (gid >= n)
+		return;
+
+	volatile unsigned int sink = 0;
+	for (unsigned int i = 0; i < spin; ++i)
+		sink = sink + i;
+	out[gid] = value + gid;
+}
+
+// Counts the elements that hold the value probeDelayedFill wrote, as the GPU sees them.
+extern "C" __global__ void probeCountFilled(const unsigned int* in, unsigned int n, unsigned int value, unsigned int* count)
+{
+	const unsigned int gid = blockIdx.x * blockDim.x + threadIdx.x;
+	if (gid < n && in[gid] == value + gid)
+		atomicAdd(count, 1u);
+}

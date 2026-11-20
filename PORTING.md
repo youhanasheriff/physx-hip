@@ -10,7 +10,7 @@ assumed. Claims are tagged **[ran]** (executed on the test machine and observed)
 
 The port is unofficial and is not affiliated with NVIDIA or AMD.
 
-Last updated: 2026-11-19.
+Last updated: 2026-11-20.
 
 ## 1. Status
 
@@ -23,14 +23,16 @@ Last updated: 2026-11-19.
 | All 61 SDK kernel sources compile and link for AMD GPUs | done **[ran]** |
 | `libPhysXGpu_64.so` builds with the HIP backend through CMake | done **[ran]** |
 | Rigid bodies on the GPU pipeline match the CPU pipeline | 8 of 8 scenes pass, PGS and TGS **[ran]** |
-| All snippets against the HIP build | 67 pass, 2 fail, 4 skipped **[ran]** |
-| GPU snippets (14) | 12 run clean, 2 fail intermittently (section 8) **[ran]** |
+| All snippets against the HIP build | 69 pass, 0 fail, 4 skipped **[ran]** |
+| GPU snippets (14) | all pass, with two runtime workarounds in place (section 8) **[ran]** |
 | Numerical validation of GPU-only features (particles, deformables, SDF) | not started |
 | ovphysx, Kit extension | not started |
 
 **Verdict so far: feasible.** Nothing found makes the port impossible. PhysX's GPU rigid-body
-pipeline runs on an AMD GPU today and agrees with the CPU pipeline. One open defect blocks
-calling milestone 1 complete: an ordering race that crashes two GPU snippets (section 8).
+pipeline runs on an AMD GPU today and agrees with the CPU pipeline, and every GPU snippet
+runs to completion. Two defects below PhysX were found on the way, both in how the HIP
+runtime and the driver behave on the test GPU, and both are worked around in the port
+(section 8). All of this is on one integrated GPU; nothing has run on a discrete card yet.
 
 ## 2. Base
 
@@ -87,7 +89,7 @@ No discrete GPU.
   be installed without root from pip or tarballs. **[research]** Not tried; 7.1 is what was used.
 
 **Correctness work can be done on this machine.** What it cannot give: performance numbers that
-mean anything (PBF takes 279 s here), coverage of a second GPU generation, behaviour on a
+mean anything, coverage of a second GPU generation, behaviour on a
 card with real VRAM, and behaviour with more than 2 compute units, where races that hide
 here may show.
 
@@ -218,6 +220,19 @@ division by zero, reads of lanes that are inactive in a shuffle.
 - a stream waiting on another stream's kernel through an event, including PhysX's habit of
   destroying the event right after requesting the wait (`check_stream_events.cpp`).
 
+### HIP behaviour that differs from CUDA
+
+- **A kernel's results are not in memory until the host waits.** By default the HIP runtime
+  leaves what a kernel wrote in the GPU's caches and flushes them only when the host waits
+  on the device. On the test GPU those results are lost if the GPU goes idle first. The
+  GPU library switches the runtime to flush after every kernel. Section 8 has the details.
+  **[ran]** (`hip/probe/check_idle_gpu_keeps_writes.cpp`)
+- **Streams cost hardware queues, and a small GPU has few.** A CUDA stream is cheap. The HIP
+  runtime backs streams with hardware queues, up to 4 for each of three priorities plus one
+  of its own, and PhysX uses all three priorities. The test GPU offers a process 8 compute
+  queues; a scene that reached 8 stopped for good. The GPU library caps the runtime's
+  queues to stay below what the GPU offers. Section 8 has the details. **[ran]**
+
 ## 6. Design of the port
 
 Goal: NVIDIA's sources stay close to untouched, so the port can follow upstream releases.
@@ -254,15 +269,15 @@ Sizes are relative: one unit is the work milestone 0 took.
 | # | Milestone | Size | Done when |
 |---|---|---|---|
 | M0 | Baseline, inventory, kernels compile and load | 1 | **done** |
-| M1 | SDK builds against HIP and runs rigid bodies on GPU | 2-3 | **mostly done.** Remaining: fix the ordering race (section 8); articulation scenes in the comparison test; multi-architecture build |
+| M1 | SDK builds against HIP and runs rigid bodies on GPU | 2-3 | **mostly done.** Remaining: articulation scenes in the comparison test; multi-architecture build |
 | M2 | Full SDK GPU feature set | 4-6 | all 14 GPU snippets pass repeatedly; invariant-based tests for particles, deformables and SDF; same results on a discrete RDNA card |
 | M3 | ovphysx on HIP | 4-6 | ovphysx builds against the HIP SDK; its C and Python tests pass in GPU mode on AMD, with tensor output on CPU or ROCm devices |
 | M4 | omni.physx Kit extension | 3-5, plus risk | port carried to the SDK version of a released Kit; extension built from `omni/ovexts` and loaded by Kit |
 
 Main risk per milestone:
 
-- **M1**: the open race. Until its cause is known it is not clear whether it is in the
-  shim, in HIP, or an ordering PhysX gets for free on NVIDIA.
+- **M1**: the crash that blocked it is explained and worked around (section 8). What is
+  left is test coverage, not a known defect.
 - **M2**: breadth, and no CPU reference for the GPU-only features. More silent
   NVIDIA-only behaviours are likely. Function-pointer kernels need isolating.
 - **M3**: ovphysx hands results out as Warp arrays on CUDA devices. Warp is NVIDIA-only
@@ -275,40 +290,144 @@ Main risk per milestone:
   unmodified Kit on a machine where Kit's renderer cannot start. Whether Kit runs at all
   without an NVIDIA GPU is unknown and may make this milestone unreachable. **[assumed]**
 
-## 8. Open defects
+## 8. Defects
 
-### Ordering race in two GPU snippets (blocks M1)
+### Kernel results lost when the GPU goes idle (found, worked around)
 
-`SnippetDeformableVolumeKinematic` and `SnippetDirectGPUAPIArticulation` fail
-intermittently in normal asynchronous mode. **[ran]**
+`SnippetDeformableVolumeKinematic` and `SnippetDirectGPUAPIArticulation` used to fail on
+most runs. The first crashed on the host, on a null contact-manager pointer read back from
+the narrow phase; the second took a GPU memory fault at address 0. It looked like an
+ordering race. It is not one. **[ran]** unless marked:
 
-- `SnippetDeformableVolumeKinematic`: 10 of 10 runs crash. The host dereferences a garbage
-  contact-manager pointer from the narrow phase's lost/found list
-  (`PxgConstraintPartition.cpp:1387`).
-- `SnippetDirectGPUAPIArticulation`: a GPU memory fault (`HSA_STATUS_ERROR_MEMORY_FAULT`),
-  then a hang. Intermittent; it also passed on several runs.
-- Both pass 10 of 10 with `PHYSX_GPU_LAUNCH_SYNCHRONOUS=1` (PhysX waits on each launch) and
-  with `AMD_SERIALIZE_KERNEL=3` (HIP waits on each kernel). `AMD_SERIALIZE_COPY=3` does not
-  help; `HIP_HOST_COHERENT=1` and `AMD_DIRECT_DISPATCH=0` do not fix it.
-- So something proceeds before a kernel has finished. Ruled out by direct test: pageable
-  and pinned async copy rules, and event-based stream ordering with early event destruction.
-- Not yet examined: reads of host-mapped pinned memory that kernels write directly
-  (`*Mapped` buffers), `cuStreamQuery` used as a flush, context push/pop across worker
-  threads (HIP auto-creates and pushes a primary context, unlike CUDA **[research]**),
-  re-recording one event object every frame, and launches PhysX expects to fail with
-  `CUDA_ERROR_INVALID_VALUE` for empty grids.
-- The rigid-body comparison test and the other 12 GPU snippets pass in asynchronous mode.
-  With only 2 compute units here, a race can hide; treat "passes on gfx1036" with care.
+- By default the HIP runtime dispatches kernels with device-scope fences
+  (`AMD_OPT_FLUSH=1`). What a kernel writes stays in the GPU's caches, and the runtime
+  flushes them to memory only when the host waits on the device, with a system-scope
+  barrier packet. **[read]** (`rocclr/device/rocm/rocvirtual.cpp`, ROCm 7.1)
+- On gfx1036, results left in the caches are lost if the GPU then sits idle for about a
+  millisecond. `hip/probe/check_idle_gpu_keeps_writes.cpp` shows it with one stream and one
+  kernel: launch the kernel, leave the host idle, then wait and read back.
 
-Next step: trace HIP API calls (`AMD_LOG_LEVEL=3`) for one failing frame of
-`SnippetDeformableVolumeKinematic` and find the read that precedes its kernel.
+  | Host idle before the wait | Rounds that lost the kernel's writes (of 20) |
+  |---|---|
+  | 0, 0.2, 0.5 ms | 0 |
+  | 1 ms | 19 |
+  | 2 ms, 10 ms | 20 |
+  | 10 ms, a second stream keeps the GPU busy | 0 |
+  | any of the above with `AMD_OPT_FLUSH=0` | 0 |
+
+  A second kernel reading the buffer sees the same loss as a copy to the host, so the data
+  is gone, not just invisible to the host.
+- PhysX runs into it because it launches kernels on one stream and then does a millisecond
+  or more of host work before it waits for them. In the failing frame that work was two
+  64 MB device allocations for the soft-body heaps, about 2 ms each, straight after the
+  narrow-phase launches. The narrow phase's output arrays came back as zeros.
+- Everything seen earlier fits. A wait placed anywhere after those launches fixed it
+  (10 of 10 runs); sleeping for 8 ms in the same place did not (0 of 10); neither did
+  making pinned host memory coherent (`HIP_HOST_COHERENT=1`). Waiting on every kernel
+  (`PHYSX_GPU_LAUNCH_SYNCHRONOUS=1`, `AMD_SERIALIZE_KERNEL=3`) fixed it because each wait
+  flushes.
+- Likely mechanism: the integrated GPU powers its graphics core down when idle (GFXOFF)
+  and the caches do not survive that. **[assumed]** GFXOFF is enabled on the test machine
+  (`amdgpu.ppfeaturemask` is `0xfff7bfff`, bit 15 set **[ran]**), and the amdgpu driver
+  switches it off while compute queues are active only on GFX11 with older firmware and on
+  GFX9 integrated GPUs ("to fix some compute applications issue on GFX9"); GFX10.3, which
+  gfx1036 is, is not covered **[read: `amdgpu_amdkfd_set_compute_idle` in mainline Linux,
+  2026-11-20]**. One observation fits: with a compute process attached but idle, the
+  driver's dump of the hardware queue registers (`kfd/hqds` in debugfs) reads all ones,
+  as a powered-down block does; while the process is working they read normally **[ran]**.
+  The direct test,
+  switching GFXOFF off through `/sys/kernel/debug/dri/0/amdgpu_gfxoff` and re-running the
+  check, was tried and refused: with Secure Boot the kernel is in lockdown and rejects the
+  write even from root. Still open: boot once with `amdgpu.ppfeaturemask=0xfff73fff` and
+  re-run the check with `AMD_OPT_FLUSH=1`.
+- Whether discrete Radeon cards lose data the same way is **unknown**. The runtime source
+  already forces a system-scope acquire on gfx12 hardware, with the comment "needed for
+  GFX12", so the device-scope default has needed correcting before. **[read]**
+
+**Workaround in the port:** `PxHipHost.h` sets `AMD_OPT_FLUSH=0` in the process environment
+before the first HIP call, unless the variable is already set. The runtime then flushes
+after every kernel, which is what CUDA code takes for granted. With it:
+
+- `SnippetDeformableVolumeKinematic` passes 12 of 12 runs (before: between 0 and 5 of 10);
+- `SnippetDirectGPUAPIArticulation` passes 3 of 3;
+- the comparison test passes 8 of 8 scenes with both solvers, and the snippet suite passes
+  in full once the second defect below is worked around as well.
+
+Limits of the workaround:
+
+- The runtime reads the variable once, on the first HIP call in the process. A program that
+  uses HIP itself before it creates the PhysX GPU context has to set `AMD_OPT_FLUSH=0` in
+  its environment.
+- It is applied on every GPU, because only one has been tested, and it costs time.
+  Measured on the test GPU against the runtime's default: the eight rigid-body scenes of
+  the comparison test are 1% to 14% slower per step; `SnippetPBF` takes 40.7 s instead of
+  38.1 s, `SnippetPBFMultiMat` 8.5 s instead of 6.1 s, `SnippetIsosurface` 48.2 s instead
+  of 34.9 s. If discrete cards turn out not to lose data, the setting should become
+  specific to the GPUs that do.
+- This is a defect in ROCm or the kernel driver, not in PhysX: a correct HIP program loses
+  data. It has not been reported to AMD yet; the check program is a ready reproduction.
+
+### A stream never runs once the process holds every compute queue (found, worked around)
+
+`SnippetPBF` and `SnippetIsosurface` did not finish their first simulation step: both were
+stopped after 25 minutes, with `AMD_OPT_FLUSH` at 0 and at 1. One thread sat in
+`hipStreamSynchronize` at 100% CPU. **[ran]** unless marked:
+
+- The HIP runtime backs streams with hardware queues. Each stream priority (low, normal,
+  high) has its own pool, which grows to `GPU_MAX_HW_QUEUES` queues (4 by default), and
+  the runtime keeps one more queue for itself. **[read]** (`rocclr/device/rocm/rocdevice.cpp`)
+- PhysX creates one high-priority stream (broad phase), five or more at normal priority
+  (solver, articulations, simulation core, narrow phase) and low-priority ones for
+  particles, soft bodies and cloth. **[read]** The two snippets are the ones that use both
+  particle streams, which takes the process to 1 + 1 + 4 + 2 = 8 compute queues.
+- gfx1036 offers a process 8 compute queues (`num_cp_queues` in
+  `/sys/class/kfd/kfd/topology/nodes/1/properties`).
+- The driver's state during the stall (`kfd/rls` and `kfd/hqds` in debugfs, read as root):
+  the run list holds the 8 compute queues; the GPU has 8 hardware slots for them (4 pipes
+  with 2 queues each); 7 slots are active and 1 is empty. The queue without a slot has
+  work that is never read. Four of the queues that do have a slot hold unread packets too;
+  PhysX's streams wait on each other's events, so they are waiting for the one that cannot
+  run. The driver does not count 8 queues as over-subscription; its "Runlist is getting
+  oversubscribed" message appears from 9.
+- Limiting the pools decides it:
+
+  | `GPU_MAX_HW_QUEUES` | Compute queues `SnippetPBF` holds | Result |
+  |---|---|---|
+  | 1, 2 | 6 or fewer | passes, 40.3 s and 40.5 s |
+  | 3 | 7 | passes, 40.8 s |
+  | 4 (default) | 8 | stalls in the first step, every run |
+
+- It is the process's own count that matters. `SnippetPBF` with 7 queues passed in 41 s
+  beside a second process holding 4, 11 on the device in total, with the driver reporting
+  over-subscription.
+- **Not reproduced outside PhysX.** Standalone programs holding 8, 9, 10 and 13 queues
+  finished, including one where every stream waits on an event of one other stream. So
+  "8 queues" is necessary here but is not the whole trigger, and why the GPU leaves a slot
+  empty is unknown.
+- **Not explained:** on 2026-11-19 `SnippetPBF` passed in 279 s in this configuration, and
+  on 2026-11-20 it stalled in every run. In between, the machine was rebooted and the GPU
+  kernels were rebuilt after comment-only changes; the Linux kernel and ROCm packages are
+  the same.
+
+**Workaround in the port:** `PxHipHost.h` reads `num_cp_queues` for every GPU from sysfs
+before the first HIP call and sets `GPU_MAX_HW_QUEUES` so that three pools plus the
+runtime's own queue stay below the smallest count: 2 on the test GPU. A GPU with 14 or
+more compute queues keeps the runtime's default, and a value the user has set is left
+alone. With it `SnippetPBF` holds 6 compute queues and passes in 40.5 s;
+`SnippetIsosurface` passes in 48.4 s.
+
+Limits of the workaround:
+
+- As with `AMD_OPT_FLUSH`, the runtime reads the variable once, on the first HIP call.
+- The rule comes from one GPU. A program that creates HIP streams of its own next to PhysX
+  adds to the count and can still reach the limit.
+- No cost was measurable: the `SnippetPBF` times above are the same for 1, 2 and 3.
 
 ### Smaller items
 
 - **LLVM 21 AMDGPU backend defect.** `convexCoreCollision.cu` fails at `-O2`/`-O3` on every
   RDNA target tried with "SOP2/SOPC instruction requires too many immediate constants".
   Built at `-O1` for that file only. To do: reduce and report; try AMD's LLVM (`clang-rocm`).
-- `SnippetPBF` takes 279 s on the test GPU (it passes). Not investigated; may just be 2 compute units.
 - The snippet renderer's CUDA/OpenGL buffer sharing is disabled under HIP.
 - Only gfx1036 code objects are built by default; multi-target builds are untested.
 - Windows is untouched.
@@ -385,8 +504,13 @@ hip/scripts/run_snippets.sh physx/bin/linux.x86_64/checked
 # debugging aids
 PHYSX_GPU_LAUNCH_SYNCHRONOUS=1 <program>   # PhysX waits on every kernel launch
 AMD_SERIALIZE_KERNEL=3 <program>            # HIP waits on every kernel
-AMD_LOG_LEVEL=3 <program>                   # HIP API trace
+AMD_LOG_LEVEL=3 <program>                   # HIP API trace (4 adds every queue packet)
+AMD_OPT_FLUSH=1 <program>                   # the runtime's default flushing, which the GPU library turns off (section 8)
+GPU_MAX_HW_QUEUES=4 <program>               # the runtime's default queue pools, which the GPU library caps on small GPUs (section 8)
 ```
+
+The extra checks in `hip/probe` (`check_*.cpp`) are separate programs; each has its build
+and run line at the top of the file. They use the kernels `hip/probe/run.sh` builds.
 
 Note: the CPU-only and HIP presets write to the same `physx/bin/linux.x86_64/<config>`
 directory, so building one replaces the other's binaries.

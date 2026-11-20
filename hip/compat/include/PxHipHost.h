@@ -35,6 +35,9 @@
 #include <hip/driver_types.h>
 #include <hip/texture_types.h>
 #include "PxHipVectorUnrename.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
@@ -156,8 +159,76 @@ namespace pxhip
 
 // ---- driver API
 
-inline CUresult cuInit(unsigned int flags) { return hipInit(flags); }
-inline CUresult cuDriverGetVersion(int* version) { return hipDriverGetVersion(version); }
+// Two settings of the HIP runtime have to differ from its defaults for PhysX to work. The runtime reads
+// its environment once, on the first HIP call of the process, so both calls PhysX can make first go
+// through configureRuntime(). A value the user has set is left alone. PORTING.md section 8 has the
+// measurements behind both.
+//
+// AMD_OPT_FLUSH. By default the runtime leaves what a kernel wrote in the GPU's caches and only flushes
+// them to memory when the host waits on the device ("device-scope" fences). On the integrated GPU this
+// port was developed on, writes left there are lost once the GPU has been idle for about a millisecond,
+// and PhysX regularly does that much host work between launching kernels and waiting for them. 0 makes
+// the runtime flush after every kernel, which CUDA code takes for granted.
+// hip/probe/check_idle_gpu_keeps_writes.cpp shows the behaviour.
+//
+// GPU_MAX_HW_QUEUES. The runtime creates up to this many hardware queues for each of the three stream
+// priorities (4 by default) plus one for itself, and PhysX uses all three priorities. On the same GPU,
+// which offers 8 compute queues to a process, a PhysX scene that reached 8 stopped for good: one queue
+// was never given a hardware slot while the others were waiting for it. The cap keeps the most queues
+// the process can hold below what the smallest GPU in the machine offers. GPUs with 14 or more queues
+// keep the runtime's default.
+namespace pxhip
+{
+	// Fewest compute queues any GPU in the machine offers to a process, or 0 if the driver does not say.
+	inline unsigned int fewestComputeQueues()
+	{
+		unsigned int fewest = 0;
+		for (int node = 0; node < 64; ++node)
+		{
+			char path[96];
+			snprintf(path, sizeof(path), "/sys/class/kfd/kfd/topology/nodes/%d/properties", node);
+			FILE* file = fopen(path, "r");
+			if (!file)
+				continue;
+
+			char key[64];
+			unsigned long long value;
+			while (fscanf(file, "%63s %llu", key, &value) == 2)
+			{
+				if (strcmp(key, "num_cp_queues") == 0 && value > 0 && (fewest == 0 || value < fewest))
+					fewest = static_cast<unsigned int>(value);
+			}
+			fclose(file);
+		}
+		return fewest;
+	}
+
+	inline void configureRuntime()
+	{
+		static bool configured = false;
+		if (configured)
+			return;
+		configured = true;
+
+		setenv("AMD_OPT_FLUSH", "0", 0);
+
+		const unsigned int runtimeDefault = 4;
+		const unsigned int available = fewestComputeQueues();
+		if (available)
+		{
+			// three priorities, plus the runtime's own queue, must stay below what the GPU offers
+			const unsigned int perPriority = available > 4 ? (available - 2) / 3 : 1;
+			if (perPriority < runtimeDefault)
+			{
+				char text[16];
+				snprintf(text, sizeof(text), "%u", perPriority);
+				setenv("GPU_MAX_HW_QUEUES", text, 0);
+			}
+		}
+	}
+}
+inline CUresult cuInit(unsigned int flags) { pxhip::configureRuntime(); return hipInit(flags); }
+inline CUresult cuDriverGetVersion(int* version) { pxhip::configureRuntime(); return hipDriverGetVersion(version); }
 
 inline CUresult cuDeviceGet(CUdevice* device, int ordinal) { return hipDeviceGet(device, ordinal); }
 inline CUresult cuDeviceGetCount(int* count) { return hipGetDeviceCount(count); }
